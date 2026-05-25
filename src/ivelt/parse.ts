@@ -555,7 +555,7 @@ function parsePostSearch(html: string): AuthorPostsResult {
 }
 
 // ---------------------------------------------------------------------------
-// parseNotifications — UCP notifications (NO fixture; login required)
+// parseNotifications — UCP notifications (login required)
 // ---------------------------------------------------------------------------
 
 // NOTE: built against standard phpBB markup; unverified against a live logged-in
@@ -617,7 +617,7 @@ function parseNotifications(html: string): Notification[] {
 }
 
 // ---------------------------------------------------------------------------
-// parsePrivateMessages — UCP PM inbox (NO fixture; login required)
+// parsePrivateMessages — UCP PM inbox (login required)
 // ---------------------------------------------------------------------------
 
 // NOTE: built against standard phpBB markup; unverified against a live logged-in
