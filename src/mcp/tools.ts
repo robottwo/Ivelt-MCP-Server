@@ -37,14 +37,19 @@ export function registerTools(
         "generally match best). NOTE: the forum search ignores words shorter than 4 letters " +
         "and very common words, so single short/common terms return nothing — use longer, " +
         "more specific keywords. To find topics a USER started, use topics_by_author instead. " +
-        "Read-only. Use the optional 1-based `page` for more results.",
+        "Read-only. Returns `totalResults` (how many posts match) plus the matching posts on " +
+        "this page (title, link, forum, author, snippet, date). Use the optional 1-based `page` for more.",
       inputSchema: {
         keywords: z.string(),
         page: z.number().int().positive().optional(),
       },
     },
-    async ({ keywords, page }) =>
-      json(parsers.parseSearch(await client.search(keywords, page))),
+    async ({ keywords, page }) => {
+      const { total, posts } = parsers.parsePostSearch(
+        await client.search(keywords, page),
+      );
+      return json({ totalResults: total, results: posts });
+    },
   );
 
   server.registerTool(
