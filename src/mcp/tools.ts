@@ -75,15 +75,18 @@ export function registerTools(
         "report their TOTAL post count (תגובות) across the whole forum. Returns `totalPosts` " +
         "(the overall number) plus the posts on the requested page (title, link, forum, snippet, " +
         "date). This is how to answer 'how many posts has X written'. Content is Yiddish/Hebrew. " +
-        "Read-only. Use the optional 1-based `page` to walk through all of a prolific user's posts.",
+        "Read-only. Use the optional 1-based `page` to walk through all of a prolific user's posts. " +
+        "Optionally pass `keywords` to filter to that user's posts containing those words " +
+        "(e.g. find what a user said about a topic).",
       inputSchema: {
         author: z.string(),
         page: z.number().int().positive().optional(),
+        keywords: z.string().optional(),
       },
     },
-    async ({ author, page }) => {
+    async ({ author, page, keywords }) => {
       const { total, posts } = parsers.parsePostSearch(
-        await client.searchAuthorPosts(author, page),
+        await client.searchAuthorPosts(author, page, keywords),
       );
       return json({ author, totalPosts: total, page: page ?? 1, posts });
     },
@@ -131,7 +134,12 @@ export function registerTools(
         if (added === 0) break; // no new posts -> done
         if (total !== null && collected.length >= total) break;
       }
-      return json(summarizePosts(author, total, collected, pagesFetched));
+      // Also report how many topics the user has STARTED (the "found N results"
+      // heading on the topics-search page), alongside their overall post count.
+      const topicsStarted = parsers.parsePostSearch(
+        await client.searchAuthorTopics(author),
+      ).total;
+      return json(summarizePosts(author, total, collected, pagesFetched, topicsStarted));
     },
   );
 

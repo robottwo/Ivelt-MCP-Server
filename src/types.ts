@@ -49,6 +49,16 @@ export interface Post {
   text: string;
   /** Absolute permalink to this post, if available. */
   url: string | null;
+  /** Files and inline images attached to the post (download links + image src), if any. */
+  attachments: Attachment[];
+}
+
+/** A file or image attached to a post. */
+export interface Attachment {
+  /** Display name / filename, if known. */
+  name: string;
+  /** Absolute URL to the attachment (download link or image src). */
+  url: string;
 }
 
 /** A full topic view (one page of posts). */

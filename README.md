@@ -77,9 +77,9 @@ All tools are **read-only**.
 |---|---|
 | `search_posts(keywords, page?)` | Posts matching keywords (title, link, forum, author, snippet, date). |
 | `topics_by_author(author, page?)` | Topics **started** by a username. |
-| `posts_by_author(author, page?)` | A user's posts (replies + starts) plus their **total post count**. |
-| `profile_user(author, maxPages?)` | A public **activity profile**: total posts, interests (posts per forum), top topics, an active-hours histogram, active days, and date range. |
-| `read_topic(topicId, page?)` | One page of a topic's posts (author, date, text, permalink). |
+| `posts_by_author(author, page?, keywords?)` | A user's posts (replies + starts) plus their **total post count**. Optional `keywords` filters to posts containing those words. Newest-first. |
+| `profile_user(author, maxPages?)` | A public **activity profile**: total posts, topics started, interests (posts per forum), top topics, an active-hours histogram, active days, and date range. |
+| `read_topic(topicId, page?)` | One page of a topic's posts (author, date, text, permalink, and any attachment/image URLs). |
 | `list_forums()` | All forum sections from the board index. |
 | `list_topics(forumId, page?)` | Topics inside a forum. |
 | `my_notifications()` | Your notifications — **login required (see Limitations).** |

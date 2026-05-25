@@ -21,6 +21,7 @@ import type {
   TopicSummary,
   Topic,
   Post,
+  Attachment,
   SearchResult,
   AuthorPostsResult,
   Notification,
@@ -141,6 +142,72 @@ function readableText($: cheerio.CheerioAPI, el: AnyNode): string {
     collapsed.push(line);
   }
   return collapsed.join("\n").trim();
+}
+
+/** Derive a readable file name from a URL: the last path segment, else a
+ *  recognizable query value, else a generic fallback. */
+function fileNameFromUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl, BASE_URL);
+    const segment = url.pathname.split("/").filter(Boolean).pop();
+    if (segment && segment !== "file.php") return decodeURIComponent(segment);
+    // download/file.php uses query params (id=, avatar=) rather than a path name.
+    const idParam = url.searchParams.get("id") ?? url.searchParams.get("avatar");
+    if (idParam) return decodeURIComponent(idParam);
+  } catch {
+    /* fall through */
+  }
+  return "attachment";
+}
+
+/** True when an image is a phpBB emoticon/smiley rather than real content:
+ *  a smilies path, the `smilies` class, or tiny intrinsic dimensions. */
+function isSmiley($img: Cheerio<AnyNode>): boolean {
+  const src = $img.attr("src") ?? "";
+  if (/\/images\/smilies(\/|$)/i.test(src)) return true;
+  if (($img.attr("class") ?? "").split(/\s+/).includes("smilies")) return true;
+  const w = parseInt($img.attr("width") ?? "", 10);
+  const h = parseInt($img.attr("height") ?? "", 10);
+  if (Number.isFinite(w) && w > 0 && w <= 20) return true;
+  if (Number.isFinite(h) && h > 0 && h <= 20) return true;
+  return false;
+}
+
+/** Collect a post's attachments — download links and inline images — from its
+ *  `div.post` element, de-duplicated by absolute URL. Avatars and emoticons are
+ *  excluded; only files attached to (and images embedded in) the post body count. */
+function collectAttachments($: cheerio.CheerioAPI, $post: Cheerio<AnyNode>): Attachment[] {
+  const attachments: Attachment[] = [];
+  const seen = new Set<string>();
+
+  const add = (rawUrl: string | null | undefined, rawName: string): void => {
+    const url = absoluteUrl(rawUrl);
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    const name = cleanText(rawName) || cleanText(fileNameFromUrl(url)) || "attachment";
+    attachments.push({ name, url });
+  };
+
+  // Download links: attachment boxes plus any body link to download/file.php.
+  // Scoped to the post body so profile avatars (also download/file.php) are skipped.
+  const $body = $post.find(".postbody").first();
+  const $bodyScope = $body.length ? $body : $post;
+  $bodyScope
+    .find('.attachbox a[href*="download/file.php"], dl.attachbox a[href*="download/file.php"], a.postlink[href*="download/file.php"], a[href*="download/file.php"]')
+    .each((_i, a) => {
+      const $a = $(a);
+      add($a.attr("href"), $a.text());
+    });
+
+  // Inline images embedded in the post content, skipping emoticons/smilies.
+  $post.find(".content img[src]").each((_i, img) => {
+    const $img = $(img);
+    if (isSmiley($img)) return;
+    const src = $img.attr("src") ?? "";
+    add(src, fileNameFromUrl(absoluteUrl(src) ?? src));
+  });
+
+  return attachments;
 }
 
 // ---------------------------------------------------------------------------
@@ -401,8 +468,16 @@ function parseTopic(html: string): Topic {
     if (seenPostIds.has(key)) return;
     seenPostIds.add(key);
 
-    posts.push({ id: postId, author, postedAt, text, url: permalink });
+    const attachments = collectAttachments($, $post);
+
+    posts.push({ id: postId, author, postedAt, text, url: permalink, attachments });
   });
+
+  // When pagination markup is absent but the topic has real posts, default to
+  // the current page so callers always get a positive page count for a topic.
+  if (totalPages === null && posts.length > 0) {
+    totalPages = Math.max(page, 1);
+  }
 
   return { id, title, url, posts, page, totalPages };
 }
@@ -447,11 +522,16 @@ function parseSearch(html: string): SearchResult[] {
     if (forumLink.length) forumTitle = cleanText(forumLink.text());
 
     // Snippet: true phpBB search results include a `.postbody` preview inside the
-    // row. Active-topics rows have none, so this is best-effort/null.
+    // row. Active-topics rows have none, so this is best-effort/null. Quoted text
+    // ([quote]…[/quote] -> <blockquote>) is removed first so the snippet reflects
+    // the user's own words, not what they were quoting. We work on a clone to
+    // avoid mutating shared nodes.
     let snippet: string | null = null;
     const $snippet = $dl.find(".postbody .content, .postbody p, .search_block .content").first();
     if ($snippet.length) {
-      const s = cleanText($snippet.text());
+      const $c = $snippet.clone();
+      $c.find("blockquote, .quotetitle, .quotecontent").remove();
+      const s = cleanText($c.text());
       if (s) snippet = s;
     }
 
@@ -530,11 +610,15 @@ function parsePostSearch(html: string): AuthorPostsResult {
     );
     if (name) author = name;
 
-    // Snippet: the matched post body preview.
+    // Snippet: the matched post body preview. Quoted text ([quote]…[/quote] ->
+    // <blockquote>) is removed first so the snippet reflects the user's own words,
+    // not what they were quoting. We work on a clone to avoid mutating shared nodes.
     let snippet: string | null = null;
     const $content = $post.find(".content").first();
     if ($content.length) {
-      const s = readableText($, $content.get(0) as AnyNode);
+      const $c = $content.clone();
+      $c.find("blockquote, .quotetitle, .quotecontent").remove();
+      const s = readableText($, $c.get(0) as AnyNode);
       if (s) snippet = s;
     }
 

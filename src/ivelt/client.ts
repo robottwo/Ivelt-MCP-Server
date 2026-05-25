@@ -108,23 +108,30 @@ class IveltClientImpl implements IveltClient {
     // Topics STARTED by a user: phpBB author search restricted to first posts.
     // Public — unlike keyword search, this is unaffected by the min-word-length
     // / common-word rules, so it reliably finds a user's own topics.
+    // sk=t&sd=d pins the sort order (post time, newest first) so paging is
+    // stable; without it the forum re-sorts, producing overlapping pages.
     const start = this.startFor(page, SEARCH_PER_PAGE);
     return this.fetchHtml(
       `${this.config.baseUrl}/search.php?author=${encodeURIComponent(
         author,
-      )}&sr=topics&sf=firstpost&start=${start}`,
+      )}&sr=topics&sf=firstpost&sk=t&sd=d&start=${start}`,
     );
   }
 
-  async searchAuthorPosts(author: string, page = 1): Promise<string> {
+  async searchAuthorPosts(author: string, page = 1, keywords?: string): Promise<string> {
     // ALL posts (replies + topic starts) by a user, via phpBB author search.
     // Public; the results heading reports the user's total post count.
+    // sk=t&sd=d pins the sort order (post time, newest first) so paging is
+    // stable; without it the forum re-sorts, producing overlapping pages.
     const start = this.startFor(page, SEARCH_PER_PAGE);
-    return this.fetchHtml(
-      `${this.config.baseUrl}/search.php?author=${encodeURIComponent(
-        author,
-      )}&sr=posts&start=${start}`,
-    );
+    let url = `${this.config.baseUrl}/search.php?author=${encodeURIComponent(
+      author,
+    )}&sr=posts&sk=t&sd=d&start=${start}`;
+    // Optionally narrow to the author's posts containing the given keywords.
+    if (keywords && keywords.length > 0) {
+      url += `&keywords=${encodeURIComponent(keywords)}`;
+    }
+    return this.fetchHtml(url);
   }
 
   async getNotifications(): Promise<string> {

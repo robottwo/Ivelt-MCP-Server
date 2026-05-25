@@ -9,6 +9,8 @@ export interface UserProfile {
   author: string;
   /** Total posts on the forum (from the search heading), independent of how many we analyzed. */
   totalPosts: number | null;
+  /** Total topics the user has STARTED (from the topics-search heading). */
+  topicsStarted: number | null;
   /** How many posts were actually fetched + analyzed for this profile. */
   postsAnalyzed: number;
   pagesFetched: number;
@@ -130,6 +132,7 @@ export function summarizePosts(
   totalPosts: number | null,
   posts: SearchResult[],
   pagesFetched: number,
+  topicsStarted: number | null = null,
 ): UserProfile {
   const forumCounts = new Map<string, number>();
   const topicCounts = new Map<
@@ -184,6 +187,7 @@ export function summarizePosts(
   return {
     author,
     totalPosts,
+    topicsStarted,
     postsAnalyzed: posts.length,
     pagesFetched,
     truncated: totalPosts !== null && posts.length < totalPosts,

@@ -37,8 +37,10 @@ export interface IveltClient {
   search(keywords: string, page?: number): Promise<string>;
   /** Search results listing topics STARTED by a given author (username). page is 1-based. */
   searchAuthorTopics(author: string, page?: number): Promise<string>;
-  /** Search results listing ALL posts by a given author (username). page is 1-based. */
-  searchAuthorPosts(author: string, page?: number): Promise<string>;
+  /** Search results listing ALL posts by a given author (username), optionally
+   *  filtered to posts containing `keywords`. Results are sorted newest-first.
+   *  page is 1-based. */
+  searchAuthorPosts(author: string, page?: number, keywords?: string): Promise<string>;
   /** The logged-in user's notifications page (UCP). */
   getNotifications(): Promise<string>;
   /** The logged-in user's private-message inbox page (UCP). */
