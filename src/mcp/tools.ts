@@ -303,7 +303,9 @@ export function registerTools(
         "Read one page of posts from a single ivelt.com forum topic by its topic id " +
         "(the phpBB t= value, as a string). Returns the topic title, link, and the posts on " +
         "that page (author, date, plain-text body, permalink). Post content is in " +
-        "Yiddish/Hebrew. Read-only. Use the optional 1-based `page` to page through long topics.",
+        "Yiddish/Hebrew. Read-only. Pages hold 25 posts, oldest-first, so the NEWEST posts are " +
+        "on the LAST page: read page 1 to get `totalPages`, then request that page to see the " +
+        "most recent activity. Use the optional 1-based `page` to page through long topics.",
       inputSchema: {
         topicId: z.string(),
         page: z.number().int().positive().optional(),

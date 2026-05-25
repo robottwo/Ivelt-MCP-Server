@@ -30,9 +30,10 @@ const MIN_REQUEST_GAP_MS = 900;
 /** Cap on redirect hops we will follow for a single logical request. */
 const MAX_REDIRECTS = 10;
 
-/** phpBB pagination steps (prosilver defaults). */
+/** Posts/topics per page on ivelt (verified: topics and forum listings both
+ *  paginate at 25 per page, so `start` offsets must step by 25). */
 const FORUM_PER_PAGE = 25;
-const TOPIC_PER_PAGE = 15;
+const TOPIC_PER_PAGE = 25;
 // ivelt's search results list 25 hits per page (verified against captured pages).
 const SEARCH_PER_PAGE = 25;
 

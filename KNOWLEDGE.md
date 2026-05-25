@@ -44,7 +44,7 @@ Forum UI and content are Yiddish/Hebrew (right-to-left, UTF-8). Common terms:
 ## 2. How the forum works (phpBB 3.x, prosilver theme)
 
 - **URL shapes:** `index.php`; `viewforum.php?f=<id>&start=<n>`; `viewtopic.php?t=<id>` (or `?p=<postid>#p<postid>`); `search.php?author=<name>&sr=posts|topics`, `&keywords=<kw>&sf=msgonly`; sort via `&sk=v|r|t&sd=d`.
-- **~25 results per page** (search and forum listings).
+- **25 per page everywhere** — topics, forum listings, and search all paginate at 25. Posts in a topic are **oldest-first**, so the newest are on the **last page** (`page = totalPages`); to see who posted most recently, read page 1 for `totalPages`, then request that page.
 - **Sticky/announcement topics** sit at the top of a forum regardless of sort order.
 - **Two different "total posts" numbers** (don't confuse them):
   - *Authoritative* (`user_posts`) — shown as "תגובות: N" in each post's profile block on a topic page. This is the true lifetime count.
