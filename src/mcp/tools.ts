@@ -17,9 +17,17 @@ function json(d: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(d, null, 2) }] };
 }
 
+/** Report a failure as an MCP error result so the user sees the reason
+ *  (e.g. a network/TLS/HTTP error) instead of a silent empty response. */
+function fail(message: string) {
+  return { content: [{ type: "text" as const, text: `Error: ${message}` }], isError: true };
+}
+
 /**
- * Register the six read-only ivelt forum tools on the given MCP server.
+ * Register the read-only ivelt forum tools on the given MCP server.
  * The handlers fetch HTML via `client` and turn it into records via `parsers`.
+ * Every handler is wrapped so thrown errors (network/TLS/HTTP) surface as MCP
+ * error results, and the search tools explain empty result sets via detectNotice.
  */
 export function registerTools(
   server: McpServer,
@@ -45,10 +53,15 @@ export function registerTools(
       },
     },
     async ({ keywords, page }) => {
-      const { total, posts } = parsers.parsePostSearch(
-        await client.search(keywords, page),
-      );
-      return json({ totalResults: total, results: posts });
+      try {
+        const html = await client.search(keywords, page);
+        const { total, posts } = parsers.parsePostSearch(html);
+        // No matches: explain why (too-short/common words, flood control, etc.).
+        const note = posts.length === 0 ? parsers.detectNotice(html) : null;
+        return json({ totalResults: total, results: posts, ...(note ? { note } : {}) });
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
     },
   );
 
@@ -67,8 +80,17 @@ export function registerTools(
         page: z.number().int().positive().optional(),
       },
     },
-    async ({ author, page }) =>
-      json(parsers.parseSearch(await client.searchAuthorTopics(author, page))),
+    async ({ author, page }) => {
+      try {
+        const html = await client.searchAuthorTopics(author, page);
+        const results = parsers.parseSearch(html);
+        // No topics found: explain why (unknown user, login required, etc.).
+        const note = results.length === 0 ? parsers.detectNotice(html) : null;
+        return json(note ? { results, note } : results);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
   );
 
   server.registerTool(
@@ -90,10 +112,21 @@ export function registerTools(
       },
     },
     async ({ author, page, keywords }) => {
-      const { total, posts } = parsers.parsePostSearch(
-        await client.searchAuthorPosts(author, page, keywords),
-      );
-      return json({ author, totalPosts: total, page: page ?? 1, posts });
+      try {
+        const html = await client.searchAuthorPosts(author, page, keywords);
+        const { total, posts } = parsers.parsePostSearch(html);
+        // No posts found: explain why (unknown user, login required, etc.).
+        const note = posts.length === 0 ? parsers.detectNotice(html) : null;
+        return json({
+          author,
+          totalPosts: total,
+          page: page ?? 1,
+          posts,
+          ...(note ? { note } : {}),
+        });
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
     },
   );
 
@@ -115,36 +148,47 @@ export function registerTools(
       },
     },
     async ({ author, maxPages }) => {
-      const cap = Math.min(maxPages ?? PROFILE_DEFAULT_PAGES, PROFILE_MAX_PAGES);
-      const collected = [];
-      const seen = new Set<string>();
-      let total: number | null = null;
-      let pagesFetched = 0;
-      for (let page = 1; page <= cap; page++) {
-        const { total: t, posts } = parsers.parsePostSearch(
-          await client.searchAuthorPosts(author, page),
-        );
-        pagesFetched++;
-        if (total === null) total = t;
-        if (posts.length === 0) break;
-        // Dedupe across pages (robust even if page boundaries overlap).
-        let added = 0;
-        for (const p of posts) {
-          const key = p.url || `${p.topicId ?? ""}|${p.title}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          collected.push(p);
-          added++;
+      try {
+        const cap = Math.min(maxPages ?? PROFILE_DEFAULT_PAGES, PROFILE_MAX_PAGES);
+        const collected = [];
+        const seen = new Set<string>();
+        let total: number | null = null;
+        let pagesFetched = 0;
+        // Raw HTML of the first page, kept so we can explain an empty profile.
+        let firstHtml: string | null = null;
+        for (let page = 1; page <= cap; page++) {
+          const html = await client.searchAuthorPosts(author, page);
+          if (firstHtml === null) firstHtml = html;
+          const { total: t, posts } = parsers.parsePostSearch(html);
+          pagesFetched++;
+          if (total === null) total = t;
+          if (posts.length === 0) break;
+          // Dedupe across pages (robust even if page boundaries overlap).
+          let added = 0;
+          for (const p of posts) {
+            const key = p.url || `${p.topicId ?? ""}|${p.title}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            collected.push(p);
+            added++;
+          }
+          if (added === 0) break; // no new posts -> done
+          if (total !== null && collected.length >= total) break;
         }
-        if (added === 0) break; // no new posts -> done
-        if (total !== null && collected.length >= total) break;
+        // Also report how many topics the user has STARTED (the "found N results"
+        // heading on the topics-search page), alongside their overall post count.
+        const topicsStarted = parsers.parsePostSearch(
+          await client.searchAuthorTopics(author),
+        ).total;
+        const summary = summarizePosts(author, total, collected, pagesFetched, topicsStarted);
+        // No public posts found: explain why (unknown user, login required, etc.).
+        const note = collected.length === 0 && firstHtml !== null
+          ? parsers.detectNotice(firstHtml)
+          : null;
+        return json(note ? { ...summary, note } : summary);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
       }
-      // Also report how many topics the user has STARTED (the "found N results"
-      // heading on the topics-search page), alongside their overall post count.
-      const topicsStarted = parsers.parsePostSearch(
-        await client.searchAuthorTopics(author),
-      ).total;
-      return json(summarizePosts(author, total, collected, pagesFetched, topicsStarted));
     },
   );
 
@@ -162,8 +206,13 @@ export function registerTools(
         page: z.number().int().positive().optional(),
       },
     },
-    async ({ topicId, page }) =>
-      json(parsers.parseTopic(await client.getTopic(topicId, page))),
+    async ({ topicId, page }) => {
+      try {
+        return json(parsers.parseTopic(await client.getTopic(topicId, page)));
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
   );
 
   server.registerTool(
@@ -176,7 +225,13 @@ export function registerTools(
         "list_topics. Forum names are in Yiddish/Hebrew. Read-only; takes no inputs.",
       inputSchema: {},
     },
-    async () => json(parsers.parseForumIndex(await client.getForumIndex())),
+    async () => {
+      try {
+        return json(parsers.parseForumIndex(await client.getForumIndex()));
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
   );
 
   server.registerTool(
@@ -193,8 +248,13 @@ export function registerTools(
         page: z.number().int().positive().optional(),
       },
     },
-    async ({ forumId, page }) =>
-      json(parsers.parseForum(await client.getForum(forumId, page))),
+    async ({ forumId, page }) => {
+      try {
+        return json(parsers.parseForum(await client.getForum(forumId, page)));
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
   );
 
   server.registerTool(
@@ -209,7 +269,13 @@ export function registerTools(
         "error explaining that. The other tools (search, browse, read) work without login.",
       inputSchema: {},
     },
-    async () => json(parsers.parseNotifications(await client.getNotifications())),
+    async () => {
+      try {
+        return json(parsers.parseNotifications(await client.getNotifications()));
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
   );
 
   server.registerTool(
@@ -224,6 +290,39 @@ export function registerTools(
         "access — this tool will usually return an error explaining that.",
       inputSchema: {},
     },
-    async () => json(parsers.parsePrivateMessages(await client.getPrivateMessages())),
+    async () => {
+      try {
+        return json(parsers.parsePrivateMessages(await client.getPrivateMessages()));
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
+  );
+
+  server.registerTool(
+    "health_check",
+    {
+      title: "Health check",
+      description:
+        "Check that the ivelt.com forum is reachable and report whether the session is logged " +
+        "in. Use this first if other tools return errors or empty results.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const { reachable, loggedIn } = await client.checkConnectivity();
+        return json({
+          reachable,
+          loggedIn,
+          note: reachable
+            ? "Forum reachable. Search/browse/read work without login. Login is blocked by the " +
+              "site's Cloudflare protection, so my_notifications/my_messages are unavailable."
+            : "Could not reach ivelt.com — check your network / that the server runs with " +
+              "--use-system-ca.",
+        });
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
   );
 }

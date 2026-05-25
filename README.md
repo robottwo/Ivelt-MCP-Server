@@ -84,6 +84,9 @@ All tools are **read-only**.
 | `list_topics(forumId, page?)` | Topics inside a forum. |
 | `my_notifications()` | Your notifications — **login required (see Limitations).** |
 | `my_messages()` | Your private-message inbox — **login required (see Limitations).** |
+| `health_check()` | Quick diagnostic — is the forum reachable, and is the session logged in. Run this first if a tool errors or comes back empty. |
+
+Tools surface real errors (network / TLS / HTTP) instead of failing silently, and a search that finds nothing returns a `note` explaining why — e.g. the words were too short/common, search flood control, or login required.
 
 ## Optional: logged-in features
 

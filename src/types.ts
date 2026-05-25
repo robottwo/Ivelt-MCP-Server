@@ -106,6 +106,20 @@ export interface AuthorPostsResult {
   posts: SearchResult[];
 }
 
+/** A classified phpBB notice/message page — explains why a search came back with
+ *  no usable results (instead of a silent empty array). */
+export interface SearchNotice {
+  /** What kind of notice the page is:
+   *  - no_results: the search ran but matched nothing
+   *  - words_ignored: terms were too short / too common and were dropped
+   *  - flood_wait: search flood control — must wait before searching again
+   *  - login_required: the page needs a logged-in session
+   *  - notice: some other phpBB message (message text included) */
+  kind: "no_results" | "words_ignored" | "flood_wait" | "login_required" | "notice";
+  /** The human-readable message from the page (may be Yiddish/Hebrew), if found. */
+  message: string | null;
+}
+
 /** One entry from the logged-in user's notifications list (ucp notifications). */
 export interface Notification {
   /** Notification text, e.g. "X quoted you in topic Y". */

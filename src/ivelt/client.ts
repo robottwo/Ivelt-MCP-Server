@@ -144,6 +144,28 @@ class IveltClientImpl implements IveltClient {
     return this.fetchHtml(`${this.config.baseUrl}/ucp.php?i=pm&folder=inbox`);
   }
 
+  /**
+   * Lightweight diagnostic probe. Fetches the board index and inspects the HTML:
+   *  - `reachable` is true when the request succeeds and the body looks like the
+   *    forum (a `forumtitle` link, or the phpBB body markup).
+   *  - `loggedIn` is true when the page exposes a logout link (mode=logout),
+   *    which phpBB only renders for an authenticated session.
+   * Reuses fetchHtml so cookies, User-Agent, and the polite throttle apply.
+   * Never throws — any failure reports the forum as unreachable.
+   */
+  async checkConnectivity(): Promise<{ reachable: boolean; loggedIn: boolean }> {
+    try {
+      const html = await this.fetchHtml(`${this.config.baseUrl}/index.php`);
+      const reachable =
+        /class\s*=\s*["'][^"']*\bforumtitle\b/i.test(html) ||
+        /<body[^>]*\bid\s*=\s*["']phpbb["']/i.test(html);
+      const loggedIn = /mode=logout/i.test(html);
+      return { reachable, loggedIn };
+    } catch {
+      return { reachable: false, loggedIn: false };
+    }
+  }
+
   // ---- session handling ----------------------------------------------------
 
   /** Ensure a logged-in session exists before a page fetch (lazy login). */
@@ -264,8 +286,7 @@ class IveltClientImpl implements IveltClient {
           redirect: "manual",
         });
       } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        throw new Error(`Request to ${currentUrl} failed: ${reason}`);
+        throw classifyFetchError(err, currentUrl);
       }
 
       // Capture every Set-Cookie from this hop into the jar.
@@ -288,9 +309,12 @@ class IveltClientImpl implements IveltClient {
       }
 
       if (!response.ok) {
-        throw new Error(
-          `HTTP ${response.status} ${response.statusText} for ${currentUrl}`,
-        );
+        let message = `HTTP ${response.status} ${response.statusText} for ${currentUrl}`;
+        if (response.status === 403) {
+          message +=
+            " — this may be Cloudflare blocking automated access to the site.";
+        }
+        throw new Error(message);
       }
 
       return response.text();
@@ -331,6 +355,62 @@ class IveltClientImpl implements IveltClient {
     }
     this.lastRequestTime = Date.now();
   }
+}
+
+/**
+ * Turn a low-level fetch failure into a clear, actionable Error.
+ *
+ * Node's fetch wraps the real cause in a TypeError ("fetch failed"); the useful
+ * detail (a TLS or system error code) lives on the underlying `cause`. We
+ * inspect both the message and the cause's code/message and classify into:
+ *  - TLS/certificate problems (commonly TLS interception) → point at the
+ *    documented `node --use-system-ca` workaround.
+ *  - DNS/connection problems → a plain network-error message.
+ *  - anything else → a generic message that still names the URL and cause.
+ */
+function classifyFetchError(err: unknown, url: string): Error {
+  const message = err instanceof Error ? err.message : String(err);
+  // Dig the underlying cause out of Node's "fetch failed" wrapper, if present.
+  const cause = (err as { cause?: unknown })?.cause;
+  const causeMessage =
+    cause instanceof Error ? cause.message : cause ? String(cause) : "";
+  const causeCode =
+    cause && typeof cause === "object" && "code" in cause
+      ? String((cause as { code?: unknown }).code ?? "")
+      : "";
+  // Combined haystack so we catch the signal wherever Node put it.
+  const haystack = `${message} ${causeMessage} ${causeCode}`;
+  // Prefer the most specific underlying detail when building the message.
+  const detail = causeMessage || causeCode || message;
+
+  const tlsSignals = [
+    "UNABLE_TO_GET_ISSUER_CERT",
+    "SELF_SIGNED",
+    "CERT_",
+    "unable to verify",
+    "DEPTH_ZERO",
+  ];
+  if (tlsSignals.some((sig) => haystack.includes(sig))) {
+    return new Error(
+      'TLS certificate error reaching ivelt.com — run the server with ' +
+        '"node --use-system-ca" (see README). ' +
+        `(underlying: ${detail})`,
+    );
+  }
+
+  const networkSignals = [
+    "ENOTFOUND",
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+    "ECONNRESET",
+    "EAI_AGAIN",
+    "fetch failed",
+  ];
+  if (networkSignals.some((sig) => haystack.includes(sig))) {
+    return new Error(`Could not reach ivelt.com (network error): ${detail}`);
+  }
+
+  return new Error(`Request to ${url} failed: ${detail}`);
 }
 
 /**

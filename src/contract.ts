@@ -11,6 +11,7 @@ import type {
   Topic,
   SearchResult,
   AuthorPostsResult,
+  SearchNotice,
   Notification,
   PrivateMessage,
 } from "./types.js";
@@ -45,6 +46,8 @@ export interface IveltClient {
   getNotifications(): Promise<string>;
   /** The logged-in user's private-message inbox page (UCP). */
   getPrivateMessages(): Promise<string>;
+  /** Lightweight diagnostic: is the forum reachable, and does the session look logged in? */
+  checkConnectivity(): Promise<{ reachable: boolean; loggedIn: boolean }>;
 }
 
 /**
@@ -59,6 +62,9 @@ export interface Parsers {
   parseSearch(html: string): SearchResult[];
   /** Parse an "all posts by a user" search-results page: total count + the page's posts. */
   parsePostSearch(html: string): AuthorPostsResult;
+  /** Classify a phpBB notice/message page (why a search returned nothing).
+   *  Returns null when the page is a normal results page. */
+  detectNotice(html: string): SearchNotice | null;
   parseNotifications(html: string): Notification[];
   parsePrivateMessages(html: string): PrivateMessage[];
 }

@@ -24,6 +24,7 @@ import type {
   Attachment,
   SearchResult,
   AuthorPostsResult,
+  SearchNotice,
   Notification,
   PrivateMessage,
 } from "../types.js";
@@ -765,6 +766,85 @@ function parsePrivateMessages(html: string): PrivateMessage[] {
 }
 
 // ---------------------------------------------------------------------------
+// detectNotice — explain why a search returned nothing
+//
+// When a search yields no usable rows, phpBB serves a message/notice page rather
+// than a results list (terms too common, search flood control, login required,
+// or simply no matches). This classifies that page so callers can report the
+// reason instead of returning a silent empty array. Returns null when the input
+// is a normal results page (or is empty/unparseable). Never throws.
+// ---------------------------------------------------------------------------
+
+// Classification patterns. Pages are Yiddish/Hebrew, occasionally English, so
+// each kind matches both. Order matters: the first kind that matches wins.
+const NOTICE_PATTERNS: ReadonlyArray<{ kind: SearchNotice["kind"]; re: RegExp }> = [
+  {
+    kind: "words_ignored",
+    re: /common word|too common|ignored because|שכיח|כאטש .{0,3}\d|מוז.{0,8}\d.{0,8}אותיות|at least \d|too short|fewer than|less than \d char/i,
+  },
+  {
+    kind: "flood_wait",
+    re: /flood|too soon|only search.*once|wait.*\d.*second|זוכן נאכאמאל|מוזט?\s*ווארטן|נאך אמאל/i,
+  },
+  {
+    kind: "login_required",
+    re: /must be (logged|registered)|log ?in to|not authoris|permission|אריינגעלאגט|הירשם|רשות|איינלאגירן/i,
+  },
+  {
+    kind: "no_results",
+    re: /no suitable matches|did not match|no results|returned no|לא נמצא|נישט געפונען|קיין רעזולטאט|0 רעזולטאט/i,
+  },
+];
+
+function detectNotice(html: string): SearchNotice | null {
+  const $ = loadHtml(html);
+  if (!$) return null;
+
+  // A normal results page is not a notice. Treat it as normal if it carries any
+  // of the usual result markers, or a "found N results" heading with N > 0.
+  if ($("div.search.post").length > 0 || $("a.topictitle").length > 0) {
+    return null;
+  }
+  const $resultsTitle = $("h2.searchresults-title").first();
+  if ($resultsTitle.length) {
+    const found = firstInt($resultsTitle.text());
+    if (found !== null && found > 0) return null;
+  }
+
+  // Locate the notice/message text. phpBB places it in `.message-text`, in the
+  // element/paragraph following the message title, or inside a `.panel .inner`.
+  let message = cleanText($(".message-text").first().text());
+
+  if (!message) {
+    const $title = $("h2.message-title, h2.searchresults-title").first();
+    if ($title.length) {
+      const $next = $title.next();
+      if ($next.length) message = cleanText($next.text());
+      if (!message) {
+        // Fall back to the surrounding panel/container text, minus the heading.
+        const $panel = $title.closest(".panel, #message, .message");
+        if ($panel.length) {
+          const $clone = $panel.clone();
+          $clone.find("h2").remove();
+          message = cleanText($clone.text());
+        }
+      }
+    }
+  }
+
+  if (!message) {
+    message = cleanText($(".panel .inner").first().text());
+  }
+
+  // Classify by the message text. With no text to match, it is still a non-result
+  // page, so report a generic notice.
+  if (!message) return { kind: "notice", message: null };
+
+  for (const { kind, re } of NOTICE_PATTERNS) {
+    if (re.test(message)) return { kind, message };
+  }
+  return { kind: "notice", message };
+}
 
 export const parsers: Parsers = {
   parseForumIndex,
@@ -772,6 +852,7 @@ export const parsers: Parsers = {
   parseTopic,
   parseSearch,
   parsePostSearch,
+  detectNotice,
   parseNotifications,
   parsePrivateMessages,
 };
