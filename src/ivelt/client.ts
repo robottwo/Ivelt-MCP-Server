@@ -41,6 +41,7 @@ const SEARCH_PER_PAGE = 25;
 // the network, and (b) when a search IS throttled, read the "try again in N
 // seconds" notice and wait it out, then retry — so callers don't see a failure.
 const SEARCH_CACHE_TTL_MS = 180_000; // 3 min — forum data changes slowly
+const SEARCH_CACHE_MAX_ENTRIES = 200; // bound memory in a long-running process
 const SEARCH_FLOOD_MAX_RETRIES = 2;
 const SEARCH_FLOOD_FALLBACK_MS = 15_000;
 
@@ -290,9 +291,21 @@ class IveltClientImpl implements IveltClient {
     }
 
     if (!looksFlooded(html)) {
+      this.pruneSearchCache();
       this.searchCache.set(url, { html, expires: Date.now() + SEARCH_CACHE_TTL_MS });
     }
     return html;
+  }
+
+  /** Keep the search cache bounded: drop expired entries once it grows large,
+   *  and if it's still at the cap, clear it (cheap — entries just get re-fetched). */
+  private pruneSearchCache(): void {
+    if (this.searchCache.size < SEARCH_CACHE_MAX_ENTRIES) return;
+    const now = Date.now();
+    for (const [key, entry] of this.searchCache) {
+      if (entry.expires <= now) this.searchCache.delete(key);
+    }
+    if (this.searchCache.size >= SEARCH_CACHE_MAX_ENTRIES) this.searchCache.clear();
   }
 
   private async doFetchHtml(url: string, init: RequestInit): Promise<string> {

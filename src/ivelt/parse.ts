@@ -101,7 +101,7 @@ function firstInt(s: string | null | undefined): number | null {
  * stripped, runs of whitespace collapsed, but line breaks preserved between
  * block elements and at <br>. Works on the .content node of a post.
  */
-function readableText($: cheerio.CheerioAPI, el: AnyNode): string {
+function readableText(el: AnyNode): string {
   const blockTags = new Set([
     "p", "div", "br", "li", "tr", "blockquote", "h1", "h2", "h3",
     "h4", "h5", "h6", "pre",
@@ -428,7 +428,7 @@ function parseTopic(html: string): Topic {
     if (!$content.length) return;
     if ($content.hasClass("adsm_block")) return; // ad content
 
-    const text = readableText($, $content.get(0) as AnyNode);
+    const text = readableText($content.get(0) as AnyNode);
     if (text === "") return; // empty / placeholder duplicate
 
     // post id: prefer the DOM id (pNNNN), else a permalink href.
@@ -619,7 +619,7 @@ function parsePostSearch(html: string): AuthorPostsResult {
     if ($content.length) {
       const $c = $content.clone();
       $c.find("blockquote, .quotetitle, .quotecontent").remove();
-      const s = readableText($, $c.get(0) as AnyNode);
+      const s = readableText($c.get(0) as AnyNode);
       if (s) snippet = s;
     }
 
