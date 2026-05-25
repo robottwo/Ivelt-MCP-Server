@@ -144,10 +144,14 @@ export function registerTools(
         "tone and personality, how active they are and WHEN (active-hours histogram 0-23 + active " +
         "days, in the forum's clock), how long they've been around (date range), total post count, " +
         "topics started, most-engaged topics, and a sample of posts with snippets. " +
-        "PRESENT IT OVERVIEW-FIRST: don't just dump numbers — open with a short general read " +
-        "(2-4 sentences) of who this nick seems to be, synthesized from the data, THEN give the " +
-        "detailed drill-down (totals, interests/forums, activity rhythm, top topics) and cite " +
-        "the post links you draw from. For a fun, " +
+        "PRESENT IT OVERVIEW-FIRST: do not just dump numbers. Begin with a substantial, reasoned " +
+        "OVERVIEW (several rich paragraphs) that YOU synthesize and conclude from the data — who " +
+        "this nick is as a forum personality, what their posting reveals about their interests, " +
+        "expertise, values and tone, the patterns you notice (when/where/how they engage, how it " +
+        "has shifted over time), and the conclusions you draw — written as your own analysis, not " +
+        "a list of stats. THEN, below the overview, give the detailed drill-down (totals, " +
+        "interests/forums, activity rhythm, top topics) and cite the post links you draw from. " +
+        "For a fun, " +
         "engaging read, also add a short \"just for fun\" section — 3-5 lighthearted touches " +
         "inferred from the data: a guessed daily rhythm (roughly when they seem to wake up / go " +
         "to sleep, read from the active-hours histogram) and playful analogies (\"if this nick " +
