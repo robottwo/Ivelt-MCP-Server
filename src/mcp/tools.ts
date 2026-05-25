@@ -3,6 +3,8 @@
 // Each tool calls the matching IveltClient method to fetch raw HTML, hands that
 // HTML to the matching parser, and returns the resulting records as JSON text.
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { IveltClient, Parsers } from "../contract.js";
@@ -357,6 +359,36 @@ export function registerTools(
         return json(parsers.parseForum(await client.getForum(forumId, page, sort)));
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
+  );
+
+  server.registerTool(
+    "forum_guide",
+    {
+      title: "Forum guide / knowledge base",
+      description:
+        "Returns this server's ivelt knowledge base (KNOWLEDGE.md): a Yiddish/Hebrew glossary of " +
+        "forum terms, how the forum works, a playbook of which tool answers which question, and " +
+        "known limitations. Read this first when working with ivelt — it is curated and grows " +
+        "over time as the tools improve. Takes no inputs.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        // KNOWLEDGE.md lives at the project root, two levels up from dist/mcp/.
+        const path = fileURLToPath(new URL("../../KNOWLEDGE.md", import.meta.url));
+        return { content: [{ type: "text" as const, text: readFileSync(path, "utf8") }] };
+      } catch {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Knowledge base (KNOWLEDGE.md) not found next to the server. See the project README.",
+            },
+          ],
+          isError: true,
+        };
       }
     },
   );

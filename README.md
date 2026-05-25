@@ -85,8 +85,11 @@ All tools are **read-only**.
 | `my_notifications()` | Your notifications — **login required (see Limitations).** |
 | `my_messages()` | Your private-message inbox — **login required (see Limitations).** |
 | `health_check()` | Quick diagnostic — is the forum reachable, and is the session logged in. Run this first if a tool errors or comes back empty. |
+| `forum_guide()` | Returns the knowledge base ([`KNOWLEDGE.md`](KNOWLEDGE.md)) — Yiddish glossary, how the forum works, and which tool to use. Call it first if you're unfamiliar with the forum. |
 
 Tools surface real errors (network / TLS / HTTP) instead of failing silently, and a search that finds nothing returns a `note` explaining why — e.g. the words were too short/common, search flood control, or login required.
+
+**Knowledge base:** [`KNOWLEDGE.md`](KNOWLEDGE.md) is a curated guide (Yiddish/Hebrew glossary, how the forum works, a tool playbook, limitations) that the `forum_guide` tool serves to the AI. It's version-controlled and grows over time as the server improves — it does **not** auto-learn from end-user sessions. Maintainers: add new terms/quirks/tips there and commit.
 
 ### Post counts (important)
 
