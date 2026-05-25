@@ -150,6 +150,20 @@ export function registerTools(
     async ({ author, maxPages }) => {
       try {
         const cap = Math.min(maxPages ?? PROFILE_DEFAULT_PAGES, PROFILE_MAX_PAGES);
+
+        // How many topics the user has STARTED (the "found N results" heading on
+        // the topics-search page). Fetched FIRST — a single request — so it isn't
+        // lost if the post paging below trips the forum's search throttle.
+        // Best-effort: a failure here must not sink the whole profile.
+        let topicsStarted: number | null = null;
+        try {
+          topicsStarted = parsers.parsePostSearch(
+            await client.searchAuthorTopics(author),
+          ).total;
+        } catch {
+          /* leave null — the post-based profile below is the primary result */
+        }
+
         const collected = [];
         const seen = new Set<string>();
         let total: number | null = null;
@@ -175,11 +189,6 @@ export function registerTools(
           if (added === 0) break; // no new posts -> done
           if (total !== null && collected.length >= total) break;
         }
-        // Also report how many topics the user has STARTED (the "found N results"
-        // heading on the topics-search page), alongside their overall post count.
-        const topicsStarted = parsers.parsePostSearch(
-          await client.searchAuthorTopics(author),
-        ).total;
         const summary = summarizePosts(author, total, collected, pagesFetched, topicsStarted);
         // No public posts found: explain why (unknown user, login required, etc.).
         const note = collected.length === 0 && firstHtml !== null
