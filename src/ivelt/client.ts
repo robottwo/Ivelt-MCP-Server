@@ -36,6 +36,14 @@ const TOPIC_PER_PAGE = 15;
 // ivelt's search results list 25 hits per page (verified against captured pages).
 const SEARCH_PER_PAGE = 25;
 
+// ivelt rate-limits searches (phpBB flood control: ~15s between searches). We
+// (a) cache recent search results so repeated/overlapping queries don't re-hit
+// the network, and (b) when a search IS throttled, read the "try again in N
+// seconds" notice and wait it out, then retry — so callers don't see a failure.
+const SEARCH_CACHE_TTL_MS = 180_000; // 3 min — forum data changes slowly
+const SEARCH_FLOOD_MAX_RETRIES = 2;
+const SEARCH_FLOOD_FALLBACK_MS = 15_000;
+
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -51,6 +59,8 @@ class IveltClientImpl implements IveltClient {
   private requestChain: Promise<unknown> = Promise.resolve();
   /** Timestamp (ms) of the last outgoing request, for rate limiting. */
   private lastRequestTime = 0;
+  /** Short-lived cache of search-result HTML, keyed by URL (see SEARCH_CACHE_TTL_MS). */
+  private readonly searchCache = new Map<string, { html: string; expires: number }>();
 
   constructor(config: IveltConfig) {
     this.config = config;
@@ -97,7 +107,7 @@ class IveltClientImpl implements IveltClient {
     const start = this.startFor(page, SEARCH_PER_PAGE);
     // phpBB GET search may 302 to search.php?search_id=...; redirects are
     // followed (with cookies) by fetchHtml, returning the final HTML.
-    return this.fetchHtml(
+    return this.fetchSearchHtml(
       `${this.config.baseUrl}/search.php?keywords=${encodeURIComponent(
         keywords,
       )}&sf=msgonly&start=${start}`,
@@ -111,7 +121,7 @@ class IveltClientImpl implements IveltClient {
     // sk=t&sd=d pins the sort order (post time, newest first) so paging is
     // stable; without it the forum re-sorts, producing overlapping pages.
     const start = this.startFor(page, SEARCH_PER_PAGE);
-    return this.fetchHtml(
+    return this.fetchSearchHtml(
       `${this.config.baseUrl}/search.php?author=${encodeURIComponent(
         author,
       )}&sr=topics&sf=firstpost&sk=t&sd=d&start=${start}`,
@@ -131,7 +141,7 @@ class IveltClientImpl implements IveltClient {
     if (keywords && keywords.length > 0) {
       url += `&keywords=${encodeURIComponent(keywords)}`;
     }
-    return this.fetchHtml(url);
+    return this.fetchSearchHtml(url);
   }
 
   async getNotifications(): Promise<string> {
@@ -261,6 +271,30 @@ class IveltClientImpl implements IveltClient {
     return run;
   }
 
+  /**
+   * Fetch a SEARCH page with two cushions against ivelt's search rate limit:
+   *  1. a short-lived cache, so repeated/overlapping searches (e.g. profile_user
+   *     run twice, or posts_by_author reusing a page) don't re-hit the network;
+   *  2. flood handling — if the forum returns "try again in N seconds", wait that
+   *     long (read from the notice) and retry, so the caller gets results instead
+   *     of an empty/throttled page. Flood pages are never cached.
+   */
+  private async fetchSearchHtml(url: string): Promise<string> {
+    const cached = this.searchCache.get(url);
+    if (cached && cached.expires > Date.now()) return cached.html;
+
+    let html = await this.fetchHtml(url);
+    for (let attempt = 0; attempt < SEARCH_FLOOD_MAX_RETRIES && looksFlooded(html); attempt++) {
+      await sleep(floodWaitMs(html));
+      html = await this.fetchHtml(url);
+    }
+
+    if (!looksFlooded(html)) {
+      this.searchCache.set(url, { html, expires: Date.now() + SEARCH_CACHE_TTL_MS });
+    }
+    return html;
+  }
+
   private async doFetchHtml(url: string, init: RequestInit): Promise<string> {
     await this.throttle();
 
@@ -368,6 +402,25 @@ class IveltClientImpl implements IveltClient {
  *  - DNS/connection problems → a plain network-error message.
  *  - anything else → a generic message that still names the URL and cause.
  */
+/**
+ * Does this page look like ivelt's search flood-control notice?
+ * (e.g. "ביטע אנטשולדיגן, אבער מען קען נישט יעצט זוכן, ביטע פראבירט נאכאמאל אין 15 סעקונדעס")
+ */
+function looksFlooded(html: string): boolean {
+  return /מען קען נישט יעצט זוכן|פראבירט נאכאמאל אין \d|נאכאמאל אין \d+\s*סעקונד|try again in \d+\s*second|cannot .{0,20}search .{0,20}(now|so soon)/i.test(
+    html,
+  );
+}
+
+/** How long to wait before retrying a flooded search: the "N seconds" stated in
+ *  the notice (clamped to 5–30s, plus a 1s buffer), else a safe fallback. */
+function floodWaitMs(html: string): number {
+  const m = html.match(/(\d+)\s*(?:סעקונדע?ס|seconds?)/i);
+  const secs = m ? parseInt(m[1], 10) : NaN;
+  if (!Number.isFinite(secs)) return SEARCH_FLOOD_FALLBACK_MS;
+  return Math.min(Math.max(secs, 5), 30) * 1000 + 1000;
+}
+
 function classifyFetchError(err: unknown, url: string): Error {
   const message = err instanceof Error ? err.message : String(err);
   // Dig the underlying cause out of Node's "fetch failed" wrapper, if present.

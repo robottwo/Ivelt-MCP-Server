@@ -784,7 +784,7 @@ const NOTICE_PATTERNS: ReadonlyArray<{ kind: SearchNotice["kind"]; re: RegExp }>
   },
   {
     kind: "flood_wait",
-    re: /flood|too soon|only search.*once|wait.*\d.*second|זוכן נאכאמאל|מוזט?\s*ווארטן|נאך אמאל/i,
+    re: /flood|too soon|only search.*once|wait.*\d.*second|try again in \d+\s*second|מען קען נישט יעצט זוכן|פראבירט נאכאמאל אין \d|נאכאמאל אין \d+\s*סעקונד|\d+\s*סעקונדע?ס|זוכן נאכאמאל|מוזט?\s*ווארטן|נאך אמאל/i,
   },
   {
     kind: "login_required",

@@ -10,7 +10,10 @@ import { summarizePosts } from "../ivelt/profile.js";
 
 /** Politeness cap on how many result pages profile_user will fetch. */
 const PROFILE_MAX_PAGES = 40;
-const PROFILE_DEFAULT_PAGES = 20;
+// Keep the default low: ivelt throttles searches (~15s apart), so each extra page
+// can add a wait. ~3 pages (~75 posts) is plenty for a character profile; callers
+// can raise maxPages when they want a deeper sample and don't mind waiting.
+const PROFILE_DEFAULT_PAGES = 3;
 
 /** Wrap any JSON-serializable value in the MCP text-content result shape. */
 function json(d: unknown) {
@@ -144,7 +147,8 @@ export function registerTools(
         "of this into a readable summary and cite the post links you draw from. Content is " +
         "Yiddish/Hebrew. Scope is strictly the public posting PERSONA — it does NOT, and must not " +
         "be used to, determine the person's real-world identity, home location/address, or contact " +
-        "info. `maxPages` (default 20, ~25 posts/page) caps analysis for very prolific users.",
+        "info. `maxPages` (default 3, ~25 posts/page) caps how deep it samples; raise it for a " +
+        "deeper profile of prolific users (slower, since the forum throttles searches ~15s apart).",
       inputSchema: {
         author: z.string(),
         maxPages: z.number().int().positive().max(PROFILE_MAX_PAGES).optional(),
