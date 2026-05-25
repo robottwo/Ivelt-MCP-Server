@@ -155,6 +155,21 @@ class IveltClientImpl implements IveltClient {
     return this.fetchHtml(`${this.config.baseUrl}/ucp.php?i=pm&folder=inbox`);
   }
 
+  async getPostPage(url: string): Promise<string> {
+    // Only fetch pages on the configured ivelt host (the URL comes from our own
+    // parsed results; this guards against being handed an off-site URL).
+    let origin: string;
+    try {
+      origin = new URL(this.config.baseUrl).origin;
+    } catch {
+      origin = "https://www.ivelt.com";
+    }
+    if (!url.startsWith(origin)) {
+      throw new Error(`Refusing to fetch a non-ivelt URL: ${url}`);
+    }
+    return this.fetchHtml(url);
+  }
+
   /**
    * Lightweight diagnostic probe. Fetches the board index and inspects the HTML:
    *  - `reachable` is true when the request succeeds and the body looks like the

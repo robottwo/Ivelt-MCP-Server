@@ -27,6 +27,29 @@ function fail(message: string) {
 }
 
 /**
+ * A user's AUTHORITATIVE lifetime post count. The search-results count is filtered
+ * to what an unauthenticated reader can see (it omits posts in restricted/trashed
+ * forums), so it undercounts. The authoritative `user_posts` value is shown publicly
+ * in the post-profile of any of their posts on a topic page — so we open one of their
+ * posts and read it from there. Best-effort: returns null on any failure.
+ */
+async function authoritativePostCount(
+  client: IveltClient,
+  parsers: Parsers,
+  posts: Array<{ url: string }>,
+  author: string,
+): Promise<number | null> {
+  const withUrl = posts.find((p) => p.url);
+  if (!withUrl) return null;
+  try {
+    const html = await client.getPostPage(withUrl.url);
+    return parsers.parseAuthorPostCount(html, author);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Register the read-only ivelt forum tools on the given MCP server.
  * The handlers fetch HTML via `client` and turn it into records via `parsers`.
  * Every handler is wrapped so thrown errors (network/TLS/HTTP) surface as MCP
@@ -101,13 +124,16 @@ export function registerTools(
     {
       title: "Posts by a user (with total count)",
       description:
-        "List a user's forum posts (their replies AND topic-starts) by exact username, and " +
-        "report their TOTAL post count (תגובות) across the whole forum. Returns `totalPosts` " +
-        "(the overall number) plus the posts on the requested page (title, link, forum, snippet, " +
-        "date). This is how to answer 'how many posts has X written'. Content is Yiddish/Hebrew. " +
-        "Read-only. Use the optional 1-based `page` to walk through all of a prolific user's posts. " +
-        "Optionally pass `keywords` to filter to that user's posts containing those words " +
-        "(e.g. find what a user said about a topic).",
+        "List a user's forum posts (replies AND topic-starts) by exact username, and report " +
+        "their post counts. Returns `totalPosts` — the AUTHORITATIVE lifetime count (תגובות) — " +
+        "plus `visiblePosts` (how many this unauthenticated reader can actually see) and " +
+        "`hiddenFromScraper` (the difference: posts in restricted or trashed forums). A non-zero " +
+        "`hiddenFromScraper` means the user is more active than the visible posts suggest — surface " +
+        "that, don't hide it. Also returns the posts on the requested page (title, link, forum, " +
+        "snippet, date). This answers 'how many posts has X written'. Content is Yiddish/Hebrew. " +
+        "Read-only. Use the optional 1-based `page` to walk a prolific user's posts. Pass " +
+        "`keywords` to instead filter to that user's posts containing those words — then it " +
+        "returns `matchingPosts` (the count for that filter) rather than lifetime totals.",
       inputSchema: {
         author: z.string(),
         page: z.number().int().positive().optional(),
@@ -120,13 +146,39 @@ export function registerTools(
         const { total, posts } = parsers.parsePostSearch(html);
         // No posts found: explain why (unknown user, login required, etc.).
         const note = posts.length === 0 ? parsers.detectNotice(html) : null;
-        return json({
+
+        if (keywords) {
+          // Keyword-filtered: `total` is the count of MATCHING posts, not a lifetime total.
+          return json({
+            author,
+            keywords,
+            matchingPosts: total,
+            page: page ?? 1,
+            posts,
+            ...(note ? { note } : {}),
+          });
+        }
+
+        // Unfiltered: the search count is visibility-filtered (it omits posts in
+        // restricted/trashed forums) and can undercount, so also read the user's
+        // authoritative lifetime count and surface both, plus the gap.
+        const authoritative =
+          posts.length > 0
+            ? await authoritativePostCount(client, parsers, posts, author)
+            : null;
+        const visiblePosts = total;
+        const out: Record<string, unknown> = {
           author,
-          totalPosts: total,
+          totalPosts: authoritative ?? visiblePosts,
+          visiblePosts,
           page: page ?? 1,
           posts,
-          ...(note ? { note } : {}),
-        });
+        };
+        if (authoritative !== null && visiblePosts !== null) {
+          out.hiddenFromScraper = authoritative - visiblePosts;
+        }
+        if (note) out.note = note;
+        return json(out);
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
       }
@@ -145,12 +197,13 @@ export function registerTools(
         "days, in the forum's clock), how long they've been around (date range), total post count, " +
         "topics started, most-engaged topics, and a sample of posts with snippets. " +
         "PRESENT IT OVERVIEW-FIRST: do not just dump numbers. Begin with a substantial, reasoned " +
-        "OVERVIEW (several rich paragraphs) that YOU synthesize and conclude from the data — who " +
-        "this nick is as a forum personality, what their posting reveals about their interests, " +
-        "expertise, values and tone, the patterns you notice (when/where/how they engage, how it " +
-        "has shifted over time), and the conclusions you draw — written as your own analysis, not " +
-        "a list of stats. THEN, below the overview, give the detailed drill-down (totals, " +
-        "interests/forums, activity rhythm, top topics) and cite the post links you draw from. " +
+        "OVERVIEW that YOU synthesize from the data, BROKEN INTO SHORT LABELED SECTIONS by theme " +
+        "(e.g. \"Interests & expertise\", \"Views & values\", \"Tone & personality\", \"Activity " +
+        "pattern\") — easy to scan, not one long block. For each conclusion, give your reasoning " +
+        "AND back it with evidence: link the specific topic/post that supports it (e.g. \"argues " +
+        "X — see [topic title](url); jokes about Y — see [topic title](url)\"), drawing on the " +
+        "topTopics and the post snippets. THEN, below the overview, give the detailed drill-down " +
+        "(totals, interests/forums, activity rhythm, top topics) and cite the post links you use. " +
         "For a fun, " +
         "engaging read, also add a short \"just for fun\" section — 3-5 lighthearted touches " +
         "inferred from the data: a guessed daily rhythm (roughly when they seem to wake up / go " +
@@ -208,12 +261,30 @@ export function registerTools(
           if (added === 0) break; // no new posts -> done
           if (total !== null && collected.length >= total) break;
         }
-        const summary = summarizePosts(author, total, collected, pagesFetched, topicsStarted);
+        // Authoritative lifetime post count (the search totals are visibility-filtered
+        // and can undercount). Best-effort, from a topic post-profile.
+        const authoritative =
+          collected.length > 0
+            ? await authoritativePostCount(client, parsers, collected, author)
+            : null;
+        const summary = summarizePosts(
+          author,
+          authoritative ?? total,
+          collected,
+          pagesFetched,
+          topicsStarted,
+        );
+        const extra: Record<string, unknown> = {};
+        if (authoritative !== null) {
+          extra.visiblePosts = total;
+          if (total !== null) extra.hiddenFromScraper = authoritative - total;
+        }
         // No public posts found: explain why (unknown user, login required, etc.).
-        const note = collected.length === 0 && firstHtml !== null
-          ? parsers.detectNotice(firstHtml)
-          : null;
-        return json(note ? { ...summary, note } : summary);
+        const note =
+          collected.length === 0 && firstHtml !== null
+            ? parsers.detectNotice(firstHtml)
+            : null;
+        return json({ ...summary, ...extra, ...(note ? { note } : {}) });
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
       }

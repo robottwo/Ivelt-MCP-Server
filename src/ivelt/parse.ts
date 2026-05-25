@@ -846,12 +846,46 @@ function detectNotice(html: string): SearchNotice | null {
   return { kind: "notice", message };
 }
 
+// ---------------------------------------------------------------------------
+// parseAuthorPostCount — a user's authoritative lifetime post count from a topic.
+//
+// phpBB exposes TWO different "total posts" numbers: the search-results count
+// (filtered to what the viewer can read) and `user_posts` (the authoritative
+// lifetime count). The latter is shown on the member profile (login-gated here)
+// AND, publicly, in the `.profile-posts` ("תגובות: N") line of every post's
+// profile block on a topic page. We read it from there.
+// ---------------------------------------------------------------------------
+
+function parseAuthorPostCount(html: string, author: string): number | null {
+  const $ = loadHtml(html);
+  if (!$) return null;
+  const target = (author ?? "").trim();
+  if (target === "") return null;
+
+  let count: number | null = null;
+  $("div.post").each((_i, el) => {
+    if (count !== null) return;
+    const $post = $(el);
+    const name = cleanText(
+      $post
+        .find(".postprofile a.username, .postprofile a.username-coloured")
+        .first()
+        .text(),
+    );
+    if (name !== target) return;
+    const n = firstInt($post.find(".postprofile .profile-posts").first().text());
+    if (n !== null) count = n;
+  });
+  return count;
+}
+
 export const parsers: Parsers = {
   parseForumIndex,
   parseForum,
   parseTopic,
   parseSearch,
   parsePostSearch,
+  parseAuthorPostCount,
   detectNotice,
   parseNotifications,
   parsePrivateMessages,

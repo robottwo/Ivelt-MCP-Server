@@ -77,7 +77,7 @@ All tools are **read-only**.
 |---|---|
 | `search_posts(keywords, page?)` | Posts matching keywords (title, link, forum, author, snippet, date). |
 | `topics_by_author(author, page?)` | Topics **started** by a username. |
-| `posts_by_author(author, page?, keywords?)` | A user's posts (replies + starts) plus their **total post count**. Optional `keywords` filters to posts containing those words. Newest-first. |
+| `posts_by_author(author, page?, keywords?)` | A user's posts (replies + starts) plus their post counts (see "Post counts" below). Optional `keywords` filters to posts containing those words. Newest-first. |
 | `profile_user(author, maxPages?)` | A public **activity profile**: total posts, topics started, interests (posts per forum), top topics, an active-hours histogram, active days, and date range. |
 | `read_topic(topicId, page?)` | One page of a topic's posts (author, date, text, permalink, and any attachment/image URLs). |
 | `list_forums()` | All forum sections from the board index. |
@@ -87,6 +87,16 @@ All tools are **read-only**.
 | `health_check()` | Quick diagnostic — is the forum reachable, and is the session logged in. Run this first if a tool errors or comes back empty. |
 
 Tools surface real errors (network / TLS / HTTP) instead of failing silently, and a search that finds nothing returns a `note` explaining why — e.g. the words were too short/common, search flood control, or login required.
+
+### Post counts (important)
+
+phpBB has **two different "total posts" numbers**, and `posts_by_author` returns both:
+
+- **`totalPosts`** — the user's *authoritative* lifetime count (phpBB's `user_posts`). The member profile that shows it is login-gated, so we read the same number from the **post-profile** ("תגובות: N") of one of their posts on a topic page (public).
+- **`visiblePosts`** — the count from the search results, i.e. only what an *unauthenticated* reader can see. Posts in restricted, hidden, or trashed forums are excluded, so this can be **lower** than the real total.
+- **`hiddenFromScraper`** — `totalPosts − visiblePosts`. A non-zero value means the user posts in areas this tool can't read, so they're more active than the visible posts suggest.
+
+Don't conflate the two: use `totalPosts` to answer "how many posts has X written," and treat `visiblePosts` as "how many I can actually show you." (With `keywords`, the tool instead returns `matchingPosts` — the count for that filter.)
 
 ## Optional: logged-in features
 

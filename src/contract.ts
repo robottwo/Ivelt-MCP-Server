@@ -46,6 +46,9 @@ export interface IveltClient {
   getNotifications(): Promise<string>;
   /** The logged-in user's private-message inbox page (UCP). */
   getPrivateMessages(): Promise<string>;
+  /** Fetch a single post/topic page by its absolute ivelt URL (e.g. a post permalink).
+   *  Used to read a user's authoritative lifetime post count from the post profile. */
+  getPostPage(url: string): Promise<string>;
   /** Lightweight diagnostic: is the forum reachable, and does the session look logged in? */
   checkConnectivity(): Promise<{ reachable: boolean; loggedIn: boolean }>;
 }
@@ -62,6 +65,9 @@ export interface Parsers {
   parseSearch(html: string): SearchResult[];
   /** Parse an "all posts by a user" search-results page: total count + the page's posts. */
   parsePostSearch(html: string): AuthorPostsResult;
+  /** Read a user's authoritative lifetime post count ("תגובות: N") from the post-profile
+   *  block of one of their posts on a topic page. Returns null if not found. */
+  parseAuthorPostCount(html: string, author: string): number | null;
   /** Classify a phpBB notice/message page (why a search returned nothing).
    *  Returns null when the page is a normal results page. */
   detectNotice(html: string): SearchNotice | null;
