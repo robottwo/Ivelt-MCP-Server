@@ -11,6 +11,14 @@ the tools are used.
 
 ---
 
+## 0. Language & style (how to write back)
+
+- **Answer in very simple, plain English** — short words, short sentences.
+- **If you write Yiddish, use THIS community's Yiddish**, not standard/YIVO/academic Yiddish:
+  - It's **chassidish / heimish** Yiddish (Hungarian-Hasidic register), **spelled phonetically**, freely mixed with **loshn-koydesh** (Hebrew/Aramaic) words and phrases.
+  - It is **not** YIVO-standard, "klal Yiddish", or "daytshmerish" — the community doesn't write that way, and it reads as foreign/wrong to them.
+  - The best guide is the forum itself: **mirror the spelling, vocabulary, and tone of the actual posts** you read (e.g. via `read_topic`). Match what's on the page, not a dictionary.
+
 ## 1. Yiddish / Hebrew glossary (forum terms)
 
 Forum UI and content are Yiddish/Hebrew (right-to-left, UTF-8). Common terms:

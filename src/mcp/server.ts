@@ -15,10 +15,17 @@ export function buildServer(client: IveltClient, parsers: Parsers): McpServer {
       instructions:
         "This forum is in Yiddish/Hebrew. If you're unsure about terms, how the forum " +
         "works, or which tool to use, call `forum_guide` first — it returns a glossary, " +
-        "forum mechanics, and a tool playbook. Always cite your sources: when you answer " +
-        "using these tools, link the source for what you report — each result/post/topic " +
-        "has a `url` field. Keep it brief and readable: short inline links (e.g. the topic " +
-        "title linking to its url), not a dump of raw URLs or a link for every line.",
+        "forum mechanics, and a tool playbook. " +
+        "LANGUAGE: write your answers in very simple, plain English (short words and " +
+        "sentences). If you write any Yiddish, use THIS community's Yiddish — the " +
+        "chassidish/heimish Yiddish, spelled phonetically and mixed with loshn-koydesh " +
+        "(Hebrew/Aramaic) words, exactly as it appears in the forum posts. Do NOT use " +
+        "standard/YIVO/academic or 'daytshmerish' Yiddish — this community doesn't write " +
+        "that way. Mirror the spelling and wording you actually see in the posts. " +
+        "Always cite your sources: when you answer using these tools, link the source for " +
+        "what you report — each result/post/topic has a `url` field. Keep it brief and " +
+        "readable: short inline links (e.g. the topic title linking to its url), not a " +
+        "dump of raw URLs or a link for every line.",
     },
   );
   registerTools(server, client, parsers);
