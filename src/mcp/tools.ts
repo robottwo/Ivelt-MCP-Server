@@ -144,7 +144,12 @@ export function registerTools(
         "tone and personality, how active they are and WHEN (active-hours histogram 0-23 + active " +
         "days, in the forum's clock), how long they've been around (date range), total post count, " +
         "topics started, most-engaged topics, and a sample of posts with snippets. Synthesize all " +
-        "of this into a readable summary and cite the post links you draw from. Content is " +
+        "of this into a readable summary and cite the post links you draw from. For a fun, " +
+        "engaging read, also add a short \"just for fun\" section — 3-5 lighthearted touches " +
+        "inferred from the data: a guessed daily rhythm (roughly when they seem to wake up / go " +
+        "to sleep, read from the active-hours histogram) and playful analogies (\"if this nick " +
+        "were a car/animal/app, they'd be ...\"). Clearly frame those as playful guesses from " +
+        "their public posting pattern, not facts about the real person. Content is " +
         "Yiddish/Hebrew. Scope is strictly the public posting PERSONA — it does NOT, and must not " +
         "be used to, determine the person's real-world identity, home location/address, or contact " +
         "info. `maxPages` (default 3, ~25 posts/page) caps how deep it samples; raise it for a " +
