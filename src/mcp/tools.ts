@@ -135,13 +135,16 @@ export function registerTools(
     {
       title: "Profile a user (public activity)",
       description:
-        "Build an activity/interest profile of an ivelt.com user from their PUBLIC posts only. " +
-        "Auto-pages through their posts and returns: total post count, interests (post counts " +
-        "per forum), most-engaged topics, an active-hours histogram (0-23, in the forum's " +
-        "displayed clock) and active days of week, the date range of activity, and a sample of " +
-        "posts with snippets. Uses only what the person posted publicly — it does NOT determine " +
-        "real identity, address, or phone. Content is Yiddish/Hebrew. `maxPages` (default 20, " +
-        "~25 posts/page) caps how many posts are analyzed for very prolific users.",
+        "The best tool for \"help me understand this nick.\" Builds a rounded portrait of an " +
+        "ivelt.com user from their PUBLIC posts so you can write a strong character summary: " +
+        "their main interests and apparent expertise, the topics/causes they care about, their " +
+        "tone and personality, how active they are and WHEN (active-hours histogram 0-23 + active " +
+        "days, in the forum's clock), how long they've been around (date range), total post count, " +
+        "topics started, most-engaged topics, and a sample of posts with snippets. Synthesize all " +
+        "of this into a readable summary and cite the post links you draw from. Content is " +
+        "Yiddish/Hebrew. Scope is strictly the public posting PERSONA — it does NOT, and must not " +
+        "be used to, determine the person's real-world identity, home location/address, or contact " +
+        "info. `maxPages` (default 20, ~25 posts/page) caps analysis for very prolific users.",
       inputSchema: {
         author: z.string(),
         maxPages: z.number().int().positive().max(PROFILE_MAX_PAGES).optional(),
