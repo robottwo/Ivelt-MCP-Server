@@ -30,8 +30,10 @@ export interface IveltClient {
   login(): Promise<void>;
   /** Board index page (list of forums). */
   getForumIndex(): Promise<string>;
-  /** A single forum's topic listing. page is 1-based. */
-  getForum(forumId: string, page?: number): Promise<string>;
+  /** A single forum's topic listing. page is 1-based. `sort` orders the topics:
+   *  "recent" (default, by last activity), "views" (most-viewed first), or
+   *  "replies" (most-replied first). */
+  getForum(forumId: string, page?: number, sort?: "recent" | "views" | "replies"): Promise<string>;
   /** A single topic's posts. page is 1-based. */
   getTopic(topicId: string, page?: number): Promise<string>;
   /** Keyword search results page. page is 1-based. */

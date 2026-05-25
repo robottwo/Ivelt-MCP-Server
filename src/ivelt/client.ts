@@ -86,12 +86,19 @@ class IveltClientImpl implements IveltClient {
     return this.fetchHtml(`${this.config.baseUrl}/index.php`);
   }
 
-  async getForum(forumId: string, page = 1): Promise<string> {
+  async getForum(
+    forumId: string,
+    page = 1,
+    sort: "recent" | "views" | "replies" = "recent",
+  ): Promise<string> {
     const start = this.startFor(page, FORUM_PER_PAGE);
+    // phpBB topic sort keys: v = views, r = replies; default order is by last post.
+    const sortParam =
+      sort === "views" ? "&sk=v&sd=d" : sort === "replies" ? "&sk=r&sd=d" : "";
     return this.fetchHtml(
       `${this.config.baseUrl}/viewforum.php?f=${encodeURIComponent(
         forumId,
-      )}&start=${start}`,
+      )}&start=${start}${sortParam}`,
     );
   }
 

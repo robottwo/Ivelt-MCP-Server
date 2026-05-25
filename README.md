@@ -76,12 +76,12 @@ All tools are **read-only**.
 | Tool | What it returns |
 |---|---|
 | `search_posts(keywords, page?)` | Posts matching keywords (title, link, forum, author, snippet, date). |
-| `topics_by_author(author, page?)` | Topics **started** by a username. |
+| `topics_by_author(author, page?)` | Topics **started** by a username, with **view + reply counts** (rank by `views` to find a user's most-viewed topics). |
 | `posts_by_author(author, page?, keywords?)` | A user's posts (replies + starts) plus their post counts (see "Post counts" below). Optional `keywords` filters to posts containing those words. Newest-first. |
 | `profile_user(author, maxPages?)` | A public **activity profile**: total posts, topics started, interests (posts per forum), top topics, an active-hours histogram, active days, and date range. |
 | `read_topic(topicId, page?)` | One page of a topic's posts (author, date, text, permalink, and any attachment/image URLs). |
 | `list_forums()` | All forum sections from the board index. |
-| `list_topics(forumId, page?)` | Topics inside a forum. |
+| `list_topics(forumId, page?, sort?)` | Topics inside a forum. `sort` = `recent` (default), `views` (most-viewed first), or `replies`. |
 | `my_notifications()` | Your notifications — **login required (see Limitations).** |
 | `my_messages()` | Your private-message inbox — **login required (see Limitations).** |
 | `health_check()` | Quick diagnostic — is the forum reachable, and is the session logged in. Run this first if a tool errors or comes back empty. |
@@ -97,6 +97,10 @@ phpBB has **two different "total posts" numbers**, and `posts_by_author` returns
 - **`hiddenFromScraper`** — `totalPosts − visiblePosts`. A non-zero value means the user posts in areas this tool can't read, so they're more active than the visible posts suggest.
 
 Don't conflate the two: use `totalPosts` to answer "how many posts has X written," and treat `visiblePosts` as "how many I can actually show you." (With `keywords`, the tool instead returns `matchingPosts` — the count for that filter.)
+
+### Views and likes
+
+Topics carry **view counts** (`list_topics` with `sort: "views"` for a forum's most-viewed; `topics_by_author` includes per-topic views so you can rank a user's topics). **Likes/"thanks" counts are not available** — ivelt only shows the thanks *button* to logged-in users, with no public count to read.
 
 ## Optional: logged-in features
 

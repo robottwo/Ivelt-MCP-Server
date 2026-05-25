@@ -94,6 +94,10 @@ export interface SearchResult {
   snippet: string | null;
   /** Date/time as the raw text shown on the page. */
   postedAt: string | null;
+  /** Reply count for the topic, if shown (topic-search results include it). */
+  replies: number | null;
+  /** View count for the topic, if shown — use this to rank a user's topics by views. */
+  views: number | null;
 }
 
 /** Result of an "all posts by a user" search: the total post count phpBB

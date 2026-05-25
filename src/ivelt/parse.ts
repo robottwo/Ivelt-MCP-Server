@@ -545,7 +545,12 @@ function parseSearch(html: string): SearchResult[] {
       if (lastTime.length) postedAt = cleanText(lastTime.text());
     }
 
-    results.push({ topicId, title, url, forumTitle, author, snippet, postedAt });
+    // Reply / view counts (topic-search + active-topics rows carry these) — used to
+    // rank a user's topics by views.
+    const replies = firstInt($dl.find("dd.posts").first().text());
+    const views = firstInt($dl.find("dd.views").first().text());
+
+    results.push({ topicId, title, url, forumTitle, author, snippet, postedAt, replies, views });
   });
 
   return results;
@@ -633,7 +638,17 @@ function parsePostSearch(html: string): AuthorPostsResult {
       if ($time.length) postedAt = cleanText($time.text());
     }
 
-    posts.push({ topicId, title, url, forumTitle, author, snippet, postedAt });
+    // Reply / view counts of the topic this post is in (shown as "תגובות: N" /
+    // "געזען: N" dd cells in each result block).
+    let replies: number | null = null;
+    let views: number | null = null;
+    $post.find("dd").each((_k, dd) => {
+      const t = cleanText($(dd).text());
+      if (replies === null && /תגובות|replies/i.test(t)) replies = firstInt(t);
+      if (views === null && /געזען|views/i.test(t)) views = firstInt(t);
+    });
+
+    posts.push({ topicId, title, url, forumTitle, author, snippet, postedAt, replies, views });
   });
 
   return { total, posts };

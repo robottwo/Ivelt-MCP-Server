@@ -97,10 +97,12 @@ export function registerTools(
       title: "Topics started by a user",
       description:
         "List the forum topics STARTED (opened) by a given ivelt.com user, by their exact " +
-        "username (Yiddish/Hebrew usernames are fine). Returns each topic's title, link, and " +
-        "author. This is the reliable way to count or list a user's own topics — unlike " +
-        "search_posts it is not affected by the min-word-length / common-word rules. " +
-        "Read-only. Use the optional 1-based `page` to page through users with many topics.",
+        "username (Yiddish/Hebrew usernames are fine). Returns each topic's title, link, author, " +
+        "and its reply/view counts — so you can find which of a user's topics got the most VIEWS " +
+        "(sort the results by `views`). The reliable way to count/list a user's own topics; unlike " +
+        "search_posts it isn't affected by the min-word-length / common-word rules. NOTE: like / " +
+        "\"thanks\" counts are NOT available — ivelt only shows the thanks button to logged-in " +
+        "users, so there's no public count to read. Read-only. Use the optional 1-based `page`.",
       inputSchema: {
         author: z.string(),
         page: z.number().int().positive().optional(),
@@ -341,15 +343,18 @@ export function registerTools(
         "List the topics inside a single ivelt.com forum by its forum id (the phpBB f= value, " +
         "as a string). Returns each topic's id, title, link, author, reply/view counts, and " +
         "last-post time. Topic titles are in Yiddish/Hebrew. Read-only. Use the optional " +
-        "1-based `page` to page through the forum.",
+        "1-based `page` to page through the forum. Use `sort` to order topics: \"recent\" " +
+        "(default), \"views\" (most-viewed first), or \"replies\" (most-replied first) — so you " +
+        "can find the most-viewed topics in a forum.",
       inputSchema: {
         forumId: z.string(),
         page: z.number().int().positive().optional(),
+        sort: z.enum(["recent", "views", "replies"]).optional(),
       },
     },
-    async ({ forumId, page }) => {
+    async ({ forumId, page, sort }) => {
       try {
-        return json(parsers.parseForum(await client.getForum(forumId, page)));
+        return json(parsers.parseForum(await client.getForum(forumId, page, sort)));
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
       }
