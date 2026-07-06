@@ -5,9 +5,15 @@
 // every PR — see .github/workflows/integration.yml).
 //
 // Design rules:
-//  - A board being unreachable/blocked SKIPS its tests (third-party downtime or
-//    a WAF change must not redline our CI); a reachable board that PARSES WRONG
-//    fails them (that's a real regression in our selectors).
+//  - Tests FAIL only when a response that is verifiably a phpBB page misparses —
+//    that's a real regression in our selectors.
+//  - Everything else SKIPS with the reason: network errors, WAF/Cloudflare
+//    blocks (both outright 403s and challenge/interstitial pages served with
+//    HTTP 200 that aren't phpBB markup at all), board downtime. Third-party
+//    availability must not redline our CI, and datacenter CI runner IPs are
+//    routinely challenged by WAFs even when the board works from home.
+//  - Skips and failures include an HTML snippet so the weekly run is
+//    diagnosable from the logs alone.
 //  - Assertions are structural invariants (non-empty lists, absolute URLs on the
 //    right origin, posts with text), never exact content — live data changes.
 //  - Request budget is tiny (typically 4 requests per board, at most 6) and the
@@ -27,11 +33,26 @@ interface Target {
 }
 
 // Well-known public phpBB 3.x boards (prosilver). Add more here as needed;
-// each target costs a handful of polite requests per run.
+// each target costs a handful of polite requests per run. Not all of them will
+// be reachable from any given network (WAFs block many datacenter IP ranges) —
+// the suite is useful as long as at least one target gets through.
 const TARGETS: Target[] = [
   { siteName: "phpBB Community", baseUrl: "https://www.phpbb.com/community" },
   { siteName: "VideoLAN Forums", baseUrl: "https://forum.videolan.org" },
+  { siteName: "Linux Mint Forums", baseUrl: "https://forums.linuxmint.com" },
 ];
+
+/** Does this look like a phpBB page at all? Same marker checkConnectivity uses:
+ *  prosilver renders <body id="phpbb" ...> on every page. A 200 response without
+ *  it is a WAF challenge/maintenance/interstitial page, not a parse subject. */
+function looksLikePhpbb(html: string): boolean {
+  return /<body[^>]*\bid\s*=\s*["']phpbb["']/i.test(html) || /\bforumtitle\b/.test(html);
+}
+
+/** First few hundred characters of a page, whitespace-collapsed, for log messages. */
+function htmlHead(html: string): string {
+  return html.replace(/\s+/g, " ").slice(0, 300);
+}
 
 function configFor(t: Target): PhpbbConfig {
   return {
@@ -52,9 +73,11 @@ for (const target of TARGETS) {
     const parsers = createParsers(config.baseUrl);
     const origin = new URL(config.baseUrl).origin;
 
-    // Reachability gate: skip (not fail) only when the request itself fails —
-    // board down, DNS, WAF block, no egress. If HTML comes back, the parse
-    // assertions below run, so selector regressions are never masked as skips.
+    // Reachability gate, two layers, both skip (not fail):
+    //  1. the request itself fails — board down, DNS, WAF 403, no egress;
+    //  2. HTTP 200 but the body isn't phpBB markup — a WAF challenge or
+    //     maintenance interstitial. Only a real phpBB page is a parse subject,
+    //     so selector regressions are never masked, and WAF noise never fails CI.
     // Fetched once, shared across the subtests to keep the request budget low.
     let indexHtml: string;
     try {
@@ -63,11 +86,21 @@ for (const target of TARGETS) {
       t.skip(`${target.siteName} unreachable from this network — skipping (${err})`);
       return;
     }
+    if (!looksLikePhpbb(indexHtml)) {
+      t.skip(
+        `${target.siteName} responded, but not with a phpBB page (WAF challenge or ` +
+          `interstitial?) — skipping. Body starts: ${htmlHead(indexHtml)}`,
+      );
+      return;
+    }
     let topicsOfOneForum: TopicSummary[] = [];
 
     await t.test("board index parses into forums", () => {
       const forums = parsers.parseForumIndex(indexHtml);
-      assert.ok(forums.length > 0, "expected at least one forum on the board index");
+      assert.ok(
+        forums.length > 0,
+        `expected at least one forum on the board index. Body starts: ${htmlHead(indexHtml)}`,
+      );
       for (const f of forums) {
         assert.match(f.id, /^\d+$/, `forum id should be numeric: ${JSON.stringify(f)}`);
         assert.ok(f.url.startsWith(origin), `forum URL should be absolute on ${origin}: ${f.url}`);
@@ -79,8 +112,10 @@ for (const target of TARGETS) {
       const forums = parsers.parseForumIndex(indexHtml);
       // Some index entries are category links or empty sections; find the
       // first forum whose listing yields topics (bounded to keep politeness).
+      let lastHtml = "";
       for (const f of forums.slice(0, 3)) {
-        const topics = parsers.parseForum(await client.getForum(f.id));
+        lastHtml = await client.getForum(f.id);
+        const topics = parsers.parseForum(lastHtml);
         if (topics.length > 0) {
           topicsOfOneForum = topics;
           for (const topic of topics) {
@@ -93,7 +128,10 @@ for (const target of TARGETS) {
           return;
         }
       }
-      assert.fail("none of the first 3 forums produced any parsed topics");
+      assert.fail(
+        "none of the first 3 forums produced any parsed topics. " +
+          `Last forum page starts: ${htmlHead(lastHtml)}`,
+      );
     });
 
     await t.test("a topic parses into posts", async () => {
