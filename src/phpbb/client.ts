@@ -1,13 +1,13 @@
-// HTTP client + login/session for the ivelt.com phpBB forum.
+// HTTP client + login/session for a phpBB forum.
 //
-// Implements the IveltClient interface (see ../contract.ts): an authenticated,
+// Implements the PhpbbClient interface (see ../contract.ts): an authenticated,
 // politely rate-limited fetcher that returns RAW HTML strings. It owns login +
 // phpBB session cookies, a desktop browser User-Agent, and the phpBB URL shapes.
 // It does NOT parse HTML — that is the parsers' job (parse.ts).
 //
 // Design notes:
 //  - Node global `fetch` is used. EVERY request carries a desktop User-Agent
-//    header; a blank/missing UA gets a 403 from Cloudflare (verified).
+//    header; some forums (e.g. behind Cloudflare) return 403 to a blank/missing UA.
 //  - Session cookies are tracked with tough-cookie's CookieJar. We read every
 //    response's Set-Cookie headers into the jar and replay the jar's Cookie
 //    header on each request. Redirects are followed MANUALLY so cookies set on
@@ -30,28 +30,32 @@ const MIN_REQUEST_GAP_MS = 900;
 /** Cap on redirect hops we will follow for a single logical request. */
 const MAX_REDIRECTS = 10;
 
-/** Posts/topics per page on ivelt (verified: topics and forum listings both
- *  paginate at 25 per page, so `start` offsets must step by 25). */
-const FORUM_PER_PAGE = 25;
-const TOPIC_PER_PAGE = 25;
-// ivelt's search results list 25 hits per page (verified against captured pages).
-const SEARCH_PER_PAGE = 25;
+/** Default posts/topics/search hits per page. phpBB defaults to 25 for topic and
+ *  forum listings, but boards can reconfigure these ("Posts per page" / "Topics
+ *  per page" ACP settings), so they are overridable via config (see PhpbbConfig).
+ *  The `start` offset must step by whatever the board actually uses. */
+const DEFAULT_PER_PAGE = 25;
 
-// ivelt rate-limits searches (phpBB flood control: ~15s between searches). We
-// (a) cache recent search results so repeated/overlapping queries don't re-hit
-// the network, and (b) when a search IS throttled, read the "try again in N
-// seconds" notice and wait it out, then retry — so callers don't see a failure.
+// Many phpBB boards rate-limit searches (flood control: often ~15s between
+// searches). We (a) cache recent search results so repeated/overlapping queries
+// don't re-hit the network, and (b) when a search IS throttled, read the "try
+// again in N seconds" notice and wait it out, then retry — so callers don't see
+// a failure.
 const SEARCH_CACHE_TTL_MS = 180_000; // 3 min — forum data changes slowly
 const SEARCH_CACHE_MAX_ENTRIES = 200; // bound memory in a long-running process
 const SEARCH_FLOOD_MAX_RETRIES = 2;
 const SEARCH_FLOOD_FALLBACK_MS = 15_000;
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 class PhpbbClientImpl implements PhpbbClient {
   private readonly config: PhpbbConfig;
   private readonly jar: CookieJar;
+  /** Origin of the configured base URL, used to guard getPostPage against off-site URLs. */
+  private readonly origin: string;
+  /** Posts per page (topic view + search results); topics per page (forum listing). */
+  private readonly postsPerPage: number;
+  private readonly topicsPerPage: number;
 
   /** True once a successful login has established a session. */
   private loggedIn = false;
@@ -67,9 +71,19 @@ class PhpbbClientImpl implements PhpbbClient {
   constructor(config: PhpbbConfig) {
     this.config = config;
     this.jar = new CookieJar();
+    // Derive the origin guard purely from the configured base URL. An
+    // unparseable base URL is a configuration error — fail loudly rather than
+    // silently accepting/refusing the wrong host.
+    try {
+      this.origin = new URL(config.baseUrl).origin;
+    } catch {
+      throw new Error(`Invalid PHPBB_BASE_URL (could not parse origin): "${config.baseUrl}"`);
+    }
+    this.postsPerPage = config.postsPerPage > 0 ? config.postsPerPage : DEFAULT_PER_PAGE;
+    this.topicsPerPage = config.topicsPerPage > 0 ? config.topicsPerPage : DEFAULT_PER_PAGE;
   }
 
-  // ---- public API (IveltClient) -------------------------------------------
+  // ---- public API (PhpbbClient) -------------------------------------------
 
   async login(): Promise<void> {
     // Idempotent: no-op if a session is already established.
@@ -83,7 +97,7 @@ class PhpbbClientImpl implements PhpbbClient {
   }
 
   async getForumIndex(): Promise<string> {
-    // Public — no login needed (and ivelt's Cloudflare blocks the login page).
+    // Public — no login needed (browsing/reading/search work anonymously).
     return this.fetchHtml(`${this.config.baseUrl}/index.php`);
   }
 
@@ -92,10 +106,9 @@ class PhpbbClientImpl implements PhpbbClient {
     page = 1,
     sort: "recent" | "views" | "replies" = "recent",
   ): Promise<string> {
-    const start = this.startFor(page, FORUM_PER_PAGE);
+    const start = this.startFor(page, this.topicsPerPage);
     // phpBB topic sort keys: v = views, r = replies; default order is by last post.
-    const sortParam =
-      sort === "views" ? "&sk=v&sd=d" : sort === "replies" ? "&sk=r&sd=d" : "";
+    const sortParam = sort === "views" ? "&sk=v&sd=d" : sort === "replies" ? "&sk=r&sd=d" : "";
     return this.fetchHtml(
       `${this.config.baseUrl}/viewforum.php?f=${encodeURIComponent(
         forumId,
@@ -104,16 +117,14 @@ class PhpbbClientImpl implements PhpbbClient {
   }
 
   async getTopic(topicId: string, page = 1): Promise<string> {
-    const start = this.startFor(page, TOPIC_PER_PAGE);
+    const start = this.startFor(page, this.postsPerPage);
     return this.fetchHtml(
-      `${this.config.baseUrl}/viewtopic.php?t=${encodeURIComponent(
-        topicId,
-      )}&start=${start}`,
+      `${this.config.baseUrl}/viewtopic.php?t=${encodeURIComponent(topicId)}&start=${start}`,
     );
   }
 
   async search(keywords: string, page = 1): Promise<string> {
-    const start = this.startFor(page, SEARCH_PER_PAGE);
+    const start = this.startFor(page, this.postsPerPage);
     // phpBB GET search may 302 to search.php?search_id=...; redirects are
     // followed (with cookies) by fetchHtml, returning the final HTML.
     return this.fetchSearchHtml(
@@ -129,7 +140,7 @@ class PhpbbClientImpl implements PhpbbClient {
     // / common-word rules, so it reliably finds a user's own topics.
     // sk=t&sd=d pins the sort order (post time, newest first) so paging is
     // stable; without it the forum re-sorts, producing overlapping pages.
-    const start = this.startFor(page, SEARCH_PER_PAGE);
+    const start = this.startFor(page, this.postsPerPage);
     return this.fetchSearchHtml(
       `${this.config.baseUrl}/search.php?author=${encodeURIComponent(
         author,
@@ -142,7 +153,7 @@ class PhpbbClientImpl implements PhpbbClient {
     // Public; the results heading reports the user's total post count.
     // sk=t&sd=d pins the sort order (post time, newest first) so paging is
     // stable; without it the forum re-sorts, producing overlapping pages.
-    const start = this.startFor(page, SEARCH_PER_PAGE);
+    const start = this.startFor(page, this.postsPerPage);
     let url = `${this.config.baseUrl}/search.php?author=${encodeURIComponent(
       author,
     )}&sr=posts&sk=t&sd=d&start=${start}`;
@@ -164,16 +175,11 @@ class PhpbbClientImpl implements PhpbbClient {
   }
 
   async getPostPage(url: string): Promise<string> {
-    // Only fetch pages on the configured ivelt host (the URL comes from our own
-    // parsed results; this guards against being handed an off-site URL).
-    let origin: string;
-    try {
-      origin = new URL(this.config.baseUrl).origin;
-    } catch {
-      origin = "https://www.ivelt.com";
-    }
-    if (!url.startsWith(origin)) {
-      throw new Error(`Refusing to fetch a non-ivelt URL: ${url}`);
+    // Only fetch pages on the configured forum host (the URL comes from our own
+    // parsed results; this guards against being handed an off-site URL). The
+    // origin is derived from the base URL in the constructor.
+    if (!url.startsWith(this.origin)) {
+      throw new Error(`Refusing to fetch a URL outside ${this.origin}: ${url}`);
     }
     return this.fetchHtml(url);
   }
@@ -226,22 +232,23 @@ class PhpbbClientImpl implements PhpbbClient {
 
     // 1) GET the login page so the session-id cookie is established and the
     //    hidden CSRF fields are available to echo back.
-    //    NOTE: ivelt fronts the forum with Cloudflare, which blocks the login
-    //    page (HTTP 403) for non-browser/headless requests. So login is not
-    //    actually reachable from this server. Browsing/reading/search are all
-    //    public and work without login; only notifications + private messages
-    //    need it. Surface a clear, accurate error rather than a raw 403.
+    //    NOTE: some forums front the login page with a WAF/Cloudflare that
+    //    blocks automated login (HTTP 403), so login may not be reachable from
+    //    this server. Browsing/reading/search are all public and work without
+    //    login; only notifications + private messages need it. Surface a clear,
+    //    accurate error rather than a raw 403.
     let formHtml: string;
     try {
       formHtml = await this.fetchHtml(loginUrl);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(
-        "ivelt login is unavailable: the login page is blocked by the site's " +
-          "Cloudflare protection for automated requests, so notifications and " +
-          "private messages can't be read by this server. Browsing forums, " +
-          "reading topics, and searching all work without login. " +
-          `(underlying: ${msg})`,
+        `Login to ${this.config.siteName} is unavailable: the login page could ` +
+          "not be fetched — some forums block automated login (e.g. behind a " +
+          "WAF/Cloudflare), so notifications and private messages can't be read " +
+          "by this server. Browsing forums, reading topics, and searching all " +
+          `work without login. (underlying: ${msg})`,
+        { cause: err },
       );
     }
     const hidden = extractLoginHiddenFields(formHtml);
@@ -296,7 +303,7 @@ class PhpbbClientImpl implements PhpbbClient {
   }
 
   /**
-   * Fetch a SEARCH page with two cushions against ivelt's search rate limit:
+   * Fetch a SEARCH page with two cushions against the board's search rate limit:
    *  1. a short-lived cache, so repeated/overlapping searches (e.g. profile_user
    *     run twice, or posts_by_author reusing a page) don't re-hit the network;
    *  2. flood handling — if the forum returns "try again in N seconds", wait that
@@ -341,10 +348,7 @@ class PhpbbClientImpl implements PhpbbClient {
       const cookieHeader = await this.jar.getCookieString(currentUrl);
       const headers = new Headers(currentInit.headers);
       headers.set("User-Agent", USER_AGENT);
-      headers.set(
-        "Accept",
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      );
+      headers.set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
       headers.set("Accept-Language", "en-US,en;q=0.9");
       if (cookieHeader) headers.set("Cookie", cookieHeader);
 
@@ -381,8 +385,7 @@ class PhpbbClientImpl implements PhpbbClient {
       if (!response.ok) {
         let message = `HTTP ${response.status} ${response.statusText} for ${currentUrl}`;
         if (response.status === 403) {
-          message +=
-            " — this may be Cloudflare blocking automated access to the site.";
+          message += " — this may be Cloudflare blocking automated access to the site.";
         }
         throw new Error(message);
       }
@@ -428,6 +431,32 @@ class PhpbbClientImpl implements PhpbbClient {
 }
 
 /**
+ * Does this page look like a phpBB search flood-control notice?
+ *
+ * Matches the English wording ("try again in N seconds", "cannot search now")
+ * plus a Yiddish/Hebrew language pack (e.g. "ביטע אנטשולדיגן, אבער מען קען נישט
+ * יעצט זוכן, ביטע פראבירט נאכאמאל אין 15 סעקונדעס"). To support another language
+ * pack, add that pack's flood-notice wording as an extra alternative below (and
+ * mirror it in the flood_wait branch of NOTICE_PATTERNS in parse.ts).
+ */
+function looksFlooded(html: string): boolean {
+  return /מען קען נישט יעצט זוכן|פראבירט נאכאמאל אין \d|נאכאמאל אין \d+\s*סעקונד|try again in \d+\s*second|cannot .{0,20}search .{0,20}(now|so soon)/i.test(
+    html,
+  );
+}
+
+/** How long to wait before retrying a flooded search: the "N seconds" stated in
+ *  the notice (clamped to 5–30s, plus a 1s buffer), else a safe fallback. The
+ *  regex reads the number followed by "seconds" in English or Yiddish/Hebrew;
+ *  add other language packs' word for "seconds" as an extra alternative. */
+function floodWaitMs(html: string): number {
+  const m = html.match(/(\d+)\s*(?:סעקונדע?ס|seconds?)/i);
+  const secs = m ? parseInt(m[1], 10) : NaN;
+  if (!Number.isFinite(secs)) return SEARCH_FLOOD_FALLBACK_MS;
+  return Math.min(Math.max(secs, 5), 30) * 1000 + 1000;
+}
+
+/**
  * Turn a low-level fetch failure into a clear, actionable Error.
  *
  * Node's fetch wraps the real cause in a TypeError ("fetch failed"); the useful
@@ -438,31 +467,18 @@ class PhpbbClientImpl implements PhpbbClient {
  *  - DNS/connection problems → a plain network-error message.
  *  - anything else → a generic message that still names the URL and cause.
  */
-/**
- * Does this page look like ivelt's search flood-control notice?
- * (e.g. "ביטע אנטשולדיגן, אבער מען קען נישט יעצט זוכן, ביטע פראבירט נאכאמאל אין 15 סעקונדעס")
- */
-function looksFlooded(html: string): boolean {
-  return /מען קען נישט יעצט זוכן|פראבירט נאכאמאל אין \d|נאכאמאל אין \d+\s*סעקונד|try again in \d+\s*second|cannot .{0,20}search .{0,20}(now|so soon)/i.test(
-    html,
-  );
-}
-
-/** How long to wait before retrying a flooded search: the "N seconds" stated in
- *  the notice (clamped to 5–30s, plus a 1s buffer), else a safe fallback. */
-function floodWaitMs(html: string): number {
-  const m = html.match(/(\d+)\s*(?:סעקונדע?ס|seconds?)/i);
-  const secs = m ? parseInt(m[1], 10) : NaN;
-  if (!Number.isFinite(secs)) return SEARCH_FLOOD_FALLBACK_MS;
-  return Math.min(Math.max(secs, 5), 30) * 1000 + 1000;
-}
-
 function classifyFetchError(err: unknown, url: string): Error {
   const message = err instanceof Error ? err.message : String(err);
+  // Name the actual host in the message (derived from the URL being fetched).
+  let host = url;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    /* keep the raw url as the label */
+  }
   // Dig the underlying cause out of Node's "fetch failed" wrapper, if present.
   const cause = (err as { cause?: unknown })?.cause;
-  const causeMessage =
-    cause instanceof Error ? cause.message : cause ? String(cause) : "";
+  const causeMessage = cause instanceof Error ? cause.message : cause ? String(cause) : "";
   const causeCode =
     cause && typeof cause === "object" && "code" in cause
       ? String((cause as { code?: unknown }).code ?? "")
@@ -481,7 +497,7 @@ function classifyFetchError(err: unknown, url: string): Error {
   ];
   if (tlsSignals.some((sig) => haystack.includes(sig))) {
     return new Error(
-      'TLS certificate error reaching ivelt.com — run the server with ' +
+      `TLS certificate error reaching ${host} — run the server with ` +
         '"node --use-system-ca" (see README). ' +
         `(underlying: ${detail})`,
     );
@@ -496,7 +512,7 @@ function classifyFetchError(err: unknown, url: string): Error {
     "fetch failed",
   ];
   if (networkSignals.some((sig) => haystack.includes(sig))) {
-    return new Error(`Could not reach ivelt.com (network error): ${detail}`);
+    return new Error(`Could not reach ${host} (network error): ${detail}`);
   }
 
   return new Error(`Request to ${url} failed: ${detail}`);
@@ -529,10 +545,7 @@ function extractLoginHiddenFields(html: string): Record<string, string> {
 
 /** Extract a single HTML attribute value from a tag string (quoted or bare). */
 function attr(tag: string, name: string): string | null {
-  const re = new RegExp(
-    `\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s"'>]+))`,
-    "i",
-  );
+  const re = new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s"'>]+))`, "i");
   const m = tag.match(re);
   if (!m) return null;
   const raw = m[2] ?? m[3] ?? m[4] ?? "";
@@ -551,12 +564,9 @@ function decodeHtmlEntities(s: string): string {
 }
 
 /**
- * Create an authenticated, rate-limited ivelt phpBB HTTP client.
- * Returns an object satisfying the IveltClient contract.
+ * Create an authenticated, rate-limited phpBB HTTP client.
+ * Returns an object satisfying the PhpbbClient contract.
  */
 export function createPhpbbClient(config: PhpbbConfig): PhpbbClient {
   return new PhpbbClientImpl(config);
 }
-
-// Backward-compatibility export for existing consumers.
-export const createIveltClient = createPhpbbClient;

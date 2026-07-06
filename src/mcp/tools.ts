@@ -1,20 +1,25 @@
-// Read-only MCP tools over the ivelt.com phpBB forum.
+// Read-only MCP tools over a phpBB forum.
 //
-// Each tool calls the matching IveltClient method to fetch raw HTML, hands that
+// Each tool calls the matching PhpbbClient method to fetch raw HTML, hands that
 // HTML to the matching parser, and returns the resulting records as JSON text.
+// Tool descriptions are templated with the configured site name so the same code
+// serves any phpBB board. Site-specific guidance (language tips, login quirks,
+// per-board conventions) belongs in the forum_guide knowledge base, not here.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { resolve as resolvePath } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { PhpbbConfig } from "../config.js";
 import type { PhpbbClient, Parsers } from "../contract.js";
 import { summarizePosts } from "../phpbb/profile.js";
 
 /** Politeness cap on how many result pages profile_user will fetch. */
 const PROFILE_MAX_PAGES = 40;
-// Keep the default low: ivelt throttles searches (~15s apart), so each extra page
-// can add a wait. ~3 pages (~75 posts) is plenty for a character profile; callers
-// can raise maxPages when they want a deeper sample and don't mind waiting.
+// Keep the default low: many boards throttle searches (often ~15s apart), so each
+// extra page can add a wait. ~3 pages (~75 posts) is plenty for a character
+// profile; callers can raise maxPages when they want a deeper sample.
 const PROFILE_DEFAULT_PAGES = 3;
 
 /** Wrap any JSON-serializable value in the MCP text-content result shape. */
@@ -51,30 +56,46 @@ async function authoritativePostCount(
   }
 }
 
+/** Read the site knowledge base for the forum_guide tool: the file named by
+ *  PHPBB_GUIDE_PATH (resolved against the process working directory) when set,
+ *  otherwise the KNOWLEDGE.md that ships next to this server. */
+function readGuide(guidePath: string): string {
+  const path =
+    guidePath && guidePath.trim() !== ""
+      ? resolvePath(guidePath)
+      : // KNOWLEDGE.md lives at the project root, two levels up from dist/mcp/.
+        fileURLToPath(new URL("../../KNOWLEDGE.md", import.meta.url));
+  return readFileSync(path, "utf8");
+}
+
 /**
- * Register the read-only ivelt forum tools on the given MCP server.
- * The handlers fetch HTML via `client` and turn it into records via `parsers`.
- * Every handler is wrapped so thrown errors (network/TLS/HTTP) surface as MCP
- * error results, and the search tools explain empty result sets via detectNotice.
+ * Register the read-only forum tools on the given MCP server. Descriptions are
+ * templated with `config.siteName`. The handlers fetch HTML via `client` and turn
+ * it into records via `parsers`. Every handler is wrapped so thrown errors
+ * (network/TLS/HTTP) surface as MCP error results, and the search tools explain
+ * empty result sets via detectNotice.
  */
 export function registerTools(
   server: McpServer,
+  config: PhpbbConfig,
   client: PhpbbClient,
   parsers: Parsers,
 ): void {
+  const site = config.siteName;
+
   server.registerTool(
     "search_posts",
     {
       title: "Search forum posts",
       description:
-        "Search the ivelt.com forum for posts matching keywords and return the matching " +
-        "topics/posts (title, link, forum, author, snippet, date). The forum is written in " +
-        "Yiddish/Hebrew, so keywords may be Yiddish or English (Hebrew-script search terms " +
-        "generally match best). NOTE: the forum search ignores words shorter than 4 letters " +
-        "and very common words, so single short/common terms return nothing — use longer, " +
-        "more specific keywords. To find topics a USER started, use topics_by_author instead. " +
-        "Read-only. Returns `totalResults` (how many posts match) plus the matching posts on " +
-        "this page (title, link, forum, author, snippet, date). Use the optional 1-based `page` for more.",
+        `Search ${site} for posts matching keywords and return the matching ` +
+        "topics/posts (title, link, forum, author, snippet, date). NOTE: phpBB search " +
+        "ignores words shorter than 4 letters and very common words, so single " +
+        "short/common terms may return nothing — use longer, more specific keywords. " +
+        "To find topics a USER started, use topics_by_author instead. Read-only. " +
+        "Returns `totalResults` (how many posts match) plus the matching posts on this " +
+        "page (title, link, forum, author, snippet, date). Use the optional 1-based " +
+        "`page` for more.",
       inputSchema: {
         keywords: z.string(),
         page: z.number().int().positive().optional(),
@@ -98,13 +119,12 @@ export function registerTools(
     {
       title: "Topics started by a user",
       description:
-        "List the forum topics STARTED (opened) by a given ivelt.com user, by their exact " +
-        "username (Yiddish/Hebrew usernames are fine). Returns each topic's title, link, author, " +
-        "and its reply/view counts — so you can find which of a user's topics got the most VIEWS " +
-        "(sort the results by `views`). The reliable way to count/list a user's own topics; unlike " +
-        "search_posts it isn't affected by the min-word-length / common-word rules. NOTE: like / " +
-        "\"thanks\" counts are NOT available — ivelt only shows the thanks button to logged-in " +
-        "users, so there's no public count to read. Read-only. Use the optional 1-based `page`.",
+        `List the forum topics STARTED (opened) by a given ${site} user, by their exact ` +
+        "username. Returns each topic's title, link, author, and its reply/view counts — " +
+        "so you can find which of a user's topics got the most VIEWS (sort the results by " +
+        "`views`). The reliable way to count/list a user's own topics; unlike search_posts " +
+        "it isn't affected by the min-word-length / common-word rules. Read-only. Use the " +
+        "optional 1-based `page`.",
       inputSchema: {
         author: z.string(),
         page: z.number().int().positive().optional(),
@@ -129,12 +149,12 @@ export function registerTools(
       title: "Posts by a user (with total count)",
       description:
         "List a user's forum posts (replies AND topic-starts) by exact username, and report " +
-        "their post counts. Returns `totalPosts` — the AUTHORITATIVE lifetime count (תגובות) — " +
-        "plus `visiblePosts` (how many this unauthenticated reader can actually see) and " +
+        "their post counts. Returns `totalPosts` — the AUTHORITATIVE lifetime count — plus " +
+        "`visiblePosts` (how many this unauthenticated reader can actually see) and " +
         "`hiddenFromScraper` (the difference: posts in restricted or trashed forums). A non-zero " +
         "`hiddenFromScraper` means the user is more active than the visible posts suggest — surface " +
         "that, don't hide it. Also returns the posts on the requested page (title, link, forum, " +
-        "snippet, date). This answers 'how many posts has X written'. Content is Yiddish/Hebrew. " +
+        "snippet, date). This answers 'how many posts has X written'. " +
         "Read-only. Use the optional 1-based `page` to walk a prolific user's posts. Pass " +
         "`keywords` to instead filter to that user's posts containing those words — then it " +
         "returns `matchingPosts` (the count for that filter) rather than lifetime totals.",
@@ -167,9 +187,7 @@ export function registerTools(
         // restricted/trashed forums) and can undercount, so also read the user's
         // authoritative lifetime count and surface both, plus the gap.
         const authoritative =
-          posts.length > 0
-            ? await authoritativePostCount(client, parsers, posts, author)
-            : null;
+          posts.length > 0 ? await authoritativePostCount(client, parsers, posts, author) : null;
         const visiblePosts = total;
         const out: Record<string, unknown> = {
           author,
@@ -194,30 +212,30 @@ export function registerTools(
     {
       title: "Profile a user (public activity)",
       description:
-        "The best tool for \"help me understand this nick.\" Builds a rounded portrait of an " +
-        "ivelt.com user from their PUBLIC posts so you can write a strong character summary: " +
+        'The best tool for "help me understand this nick." Builds a rounded portrait of a ' +
+        `${site} user from their PUBLIC posts so you can write a strong character summary: ` +
         "their main interests and apparent expertise, the topics/causes they care about, their " +
         "tone and personality, how active they are and WHEN (active-hours histogram 0-23 + active " +
         "days, in the forum's clock), how long they've been around (date range), total post count, " +
         "topics started, most-engaged topics, and a sample of posts with snippets. " +
         "PRESENT IT OVERVIEW-FIRST: do not just dump numbers. Begin with a substantial, reasoned " +
         "OVERVIEW that YOU synthesize from the data, BROKEN INTO SHORT LABELED SECTIONS by theme " +
-        "(e.g. \"Interests & expertise\", \"Views & values\", \"Tone & personality\", \"Activity " +
-        "pattern\") — easy to scan, not one long block. For each conclusion, give your reasoning " +
-        "AND back it with evidence: link the specific topic/post that supports it (e.g. \"argues " +
-        "X — see [topic title](url); jokes about Y — see [topic title](url)\"), drawing on the " +
+        '(e.g. "Interests & expertise", "Views & values", "Tone & personality", "Activity ' +
+        'pattern") — easy to scan, not one long block. For each conclusion, give your reasoning ' +
+        'AND back it with evidence: link the specific topic/post that supports it (e.g. "argues ' +
+        'X — see [topic title](url); jokes about Y — see [topic title](url)"), drawing on the ' +
         "topTopics and the post snippets. THEN, below the overview, give the detailed drill-down " +
         "(totals, interests/forums, activity rhythm, top topics) and cite the post links you use. " +
         "For a fun, " +
-        "engaging read, also add a short \"just for fun\" section — 3-5 lighthearted touches " +
+        'engaging read, also add a short "just for fun" section — 3-5 lighthearted touches ' +
         "inferred from the data: a guessed daily rhythm (roughly when they seem to wake up / go " +
-        "to sleep, read from the active-hours histogram) and playful analogies (\"if this nick " +
+        'to sleep, read from the active-hours histogram) and playful analogies ("if this nick ' +
         "were a car/animal/app, they'd be ...\"). Clearly frame those as playful guesses from " +
-        "their public posting pattern, not facts about the real person. Content is " +
-        "Yiddish/Hebrew. Scope is strictly the public posting PERSONA — it does NOT, and must not " +
+        "their public posting pattern, not facts about the real person. " +
+        "Scope is strictly the public posting PERSONA — it does NOT, and must not " +
         "be used to, determine the person's real-world identity, home location/address, or contact " +
         "info. `maxPages` (default 3, ~25 posts/page) caps how deep it samples; raise it for a " +
-        "deeper profile of prolific users (slower, since the forum throttles searches ~15s apart).",
+        "deeper profile of prolific users (slower, since some forums throttle searches).",
       inputSchema: {
         author: z.string(),
         maxPages: z.number().int().positive().max(PROFILE_MAX_PAGES).optional(),
@@ -233,9 +251,7 @@ export function registerTools(
         // Best-effort: a failure here must not sink the whole profile.
         let topicsStarted: number | null = null;
         try {
-          topicsStarted = parsers.parsePostSearch(
-            await client.searchAuthorTopics(author),
-          ).total;
+          topicsStarted = parsers.parsePostSearch(await client.searchAuthorTopics(author)).total;
         } catch {
           /* leave null — the post-based profile below is the primary result */
         }
@@ -285,9 +301,7 @@ export function registerTools(
         }
         // No public posts found: explain why (unknown user, login required, etc.).
         const note =
-          collected.length === 0 && firstHtml !== null
-            ? parsers.detectNotice(firstHtml)
-            : null;
+          collected.length === 0 && firstHtml !== null ? parsers.detectNotice(firstHtml) : null;
         return json({ ...summary, ...extra, ...(note ? { note } : {}) });
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
@@ -300,12 +314,12 @@ export function registerTools(
     {
       title: "Read a topic",
       description:
-        "Read one page of posts from a single ivelt.com forum topic by its topic id " +
+        `Read one page of posts from a single ${site} forum topic by its topic id ` +
         "(the phpBB t= value, as a string). Returns the topic title, link, and the posts on " +
-        "that page (author, date, plain-text body, permalink). Post content is in " +
-        "Yiddish/Hebrew. Read-only. Pages hold 25 posts, oldest-first, so the NEWEST posts are " +
-        "on the LAST page: read page 1 to get `totalPages`, then request that page to see the " +
-        "most recent activity. Use the optional 1-based `page` to page through long topics.",
+        "that page (author, date, plain-text body, permalink). Read-only. Pages are " +
+        "oldest-first, so the NEWEST posts are on the LAST page: read page 1 to get " +
+        "`totalPages`, then request that page to see the most recent activity. Use the " +
+        "optional 1-based `page` to page through long topics.",
       inputSchema: {
         topicId: z.string(),
         page: z.number().int().positive().optional(),
@@ -325,9 +339,9 @@ export function registerTools(
     {
       title: "List forums",
       description:
-        "List all forum sections on the ivelt.com board index (id, title, link, description, " +
+        `List all forum sections on the ${site} board index (id, title, link, description, ` +
         "and the category each sits under). Use this to discover forum ids before calling " +
-        "list_topics. Forum names are in Yiddish/Hebrew. Read-only; takes no inputs.",
+        "list_topics. Read-only; takes no inputs.",
       inputSchema: {},
     },
     async () => {
@@ -344,11 +358,11 @@ export function registerTools(
     {
       title: "List topics in a forum",
       description:
-        "List the topics inside a single ivelt.com forum by its forum id (the phpBB f= value, " +
+        `List the topics inside a single ${site} forum by its forum id (the phpBB f= value, ` +
         "as a string). Returns each topic's id, title, link, author, reply/view counts, and " +
-        "last-post time. Topic titles are in Yiddish/Hebrew. Read-only. Use the optional " +
-        "1-based `page` to page through the forum. Use `sort` to order topics: \"recent\" " +
-        "(default), \"views\" (most-viewed first), or \"replies\" (most-replied first) — so you " +
+        "last-post time. Read-only. Use the optional " +
+        '1-based `page` to page through the forum. Use `sort` to order topics: "recent" ' +
+        '(default), "views" (most-viewed first), or "replies" (most-replied first) — so you ' +
         "can find the most-viewed topics in a forum.",
       inputSchema: {
         forumId: z.string(),
@@ -370,23 +384,22 @@ export function registerTools(
     {
       title: "Forum guide / knowledge base",
       description:
-        "Returns this server's ivelt knowledge base (KNOWLEDGE.md): a Yiddish/Hebrew glossary of " +
-        "forum terms, how the forum works, a playbook of which tool answers which question, and " +
-        "known limitations. Read this first when working with ivelt — it is curated and grows " +
-        "over time as the tools improve. Takes no inputs.",
+        `Returns this deployment's optional site knowledge base for ${site}: notes about how ` +
+        "this particular forum works — vocabulary/acronyms, which subforums matter, login " +
+        "quirks, a playbook of which tool answers which question, and known limitations. Read " +
+        "this first for site-specific context. The content is whatever the operator put in the " +
+        "server's KNOWLEDGE.md (or the file named by the PHPBB_GUIDE_PATH env var). Takes no inputs.",
       inputSchema: {},
     },
     async () => {
       try {
-        // KNOWLEDGE.md lives at the project root, two levels up from dist/mcp/.
-        const path = fileURLToPath(new URL("../../KNOWLEDGE.md", import.meta.url));
-        return { content: [{ type: "text" as const, text: readFileSync(path, "utf8") }] };
+        return { content: [{ type: "text" as const, text: readGuide(config.guidePath) }] };
       } catch {
         return {
           content: [
             {
               type: "text" as const,
-              text: "Knowledge base (KNOWLEDGE.md) not found next to the server. See the project README.",
+              text: "Knowledge base not found. Provide one via KNOWLEDGE.md next to the server or the PHPBB_GUIDE_PATH env var. See the project README.",
             },
           ],
           isError: true,
@@ -400,11 +413,11 @@ export function registerTools(
     {
       title: "My notifications",
       description:
-        "Show the logged-in ivelt.com user's notifications (e.g. replies/quotes/mentions), " +
-        "with notification text, link, time, and unread state. Notification text is in " +
-        "Yiddish/Hebrew. Read-only; takes no inputs. NOTE: this requires login, which ivelt's " +
-        "Cloudflare protection blocks for automated access — this tool will usually return an " +
-        "error explaining that. The other tools (search, browse, read) work without login.",
+        `Show the logged-in ${site} user's notifications (e.g. replies/quotes/mentions), ` +
+        "with notification text, link, time, and unread state. Read-only; takes no inputs. " +
+        "NOTE: this requires login, which some forums block for automated access — this tool " +
+        "may return an error explaining that. The other tools (search, browse, read) work " +
+        "without login.",
       inputSchema: {},
     },
     async () => {
@@ -421,11 +434,10 @@ export function registerTools(
     {
       title: "My private messages",
       description:
-        "Show the logged-in ivelt.com user's private-message inbox (subject, sender, sent " +
-        "time, link, and unread state). Message subjects/senders are in Yiddish/Hebrew. " +
-        "Read-only; takes no inputs and only reads the inbox — it never sends anything. " +
-        "NOTE: this requires login, which ivelt's Cloudflare protection blocks for automated " +
-        "access — this tool will usually return an error explaining that.",
+        `Show the logged-in ${site} user's private-message inbox (subject, sender, sent ` +
+        "time, link, and unread state). Read-only; takes no inputs and only reads the inbox — " +
+        "it never sends anything. NOTE: this requires login, which some forums block for " +
+        "automated access — this tool may return an error explaining that.",
       inputSchema: {},
     },
     async () => {
@@ -442,7 +454,7 @@ export function registerTools(
     {
       title: "Health check",
       description:
-        "Check that the ivelt.com forum is reachable and report whether the session is logged " +
+        `Check that ${site} is reachable and report whether the session is logged ` +
         "in. Use this first if other tools return errors or empty results.",
       inputSchema: {},
     },
@@ -453,9 +465,10 @@ export function registerTools(
           reachable,
           loggedIn,
           note: reachable
-            ? "Forum reachable. Search/browse/read work without login. Login is blocked by the " +
-              "site's Cloudflare protection, so my_notifications/my_messages are unavailable."
-            : "Could not reach ivelt.com — check your network / that the server runs with " +
+            ? "Forum reachable. Search/browse/read work without login. Login may be blocked by " +
+              "the site (some forums block automated login), so my_notifications/my_messages " +
+              "can be unavailable."
+            : `Could not reach ${site} — check your network / that the server runs with ` +
               "--use-system-ca.",
         });
       } catch (e) {

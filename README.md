@@ -4,15 +4,11 @@ A local [Model Context Protocol](https://modelcontextprotocol.io) server for **r
 
 It fetches ordinary phpBB HTML pages, parses them into structured results, and exposes that data as MCP tools. No posting, replying, messaging, or moderation side effects.
 
-## What changed
+It is **site-agnostic**: point it at any phpBB 3.x board (prosilver theme) via configuration. The parsers were verified against English and Yiddish/Hebrew (right-to-left) boards, and the date/flood-notice patterns document how to extend them for other language packs.
 
-This fork generalizes the original ivelt-only project into a **configurable multi-site phpBB MCP**:
+## One board per server instance
 
-- configurable `PHPBB_BASE_URL`
-- configurable `PHPBB_SITE_NAME`
-- parser factory that resolves links against the configured forum
-- date parsing that works for both **English** phpBB timestamps and the original **ivelt** Yiddish/Hebrew timestamps
-- backward compatibility for legacy `IVELT_*` env vars
+This server models **one forum per running instance**. To serve several boards, run several instances, each with its own `PHPBB_BASE_URL` (and its own MCP entry in your client config). This keeps each instance's session, rate-limiting, and knowledge base cleanly scoped to a single board.
 
 ## What it can do
 
@@ -32,24 +28,22 @@ This fork generalizes the original ivelt-only project into a **configurable mult
 
 ## Configuration
 
-Create a `.env` file or inject these variables via your MCP client config:
+Create a `.env` file (see `.env.example`) or inject these variables via your MCP client config:
 
 ```env
-PHPBB_SITE_NAME=Diamond Aviators
-PHPBB_BASE_URL=https://www.diamondaviators.net/forum
-PHPBB_USERNAME=
+# Required
+PHPBB_BASE_URL=https://forum.example.com
+
+# Optional
+PHPBB_SITE_NAME=Example Forum   # defaults to the base URL's hostname
+PHPBB_USERNAME=                 # only for the login-gated tools
 PHPBB_PASSWORD=
+PHPBB_POSTS_PER_PAGE=25         # override if your board isn't the phpBB default of 25
+PHPBB_TOPICS_PER_PAGE=25
+PHPBB_GUIDE_PATH=./KNOWLEDGE.md # custom forum_guide file (falls back to bundled KNOWLEDGE.md)
 ```
 
-### Backward compatibility
-
-These legacy env vars still work:
-
-```env
-IVELT_BASE_URL=https://www.ivelt.com/forum
-IVELT_USERNAME=...
-IVELT_PASSWORD=...
-```
+`PHPBB_BASE_URL` is **required** — the server fails fast at startup with a clear error if it is missing or unparseable.
 
 ## Install and build
 
@@ -66,10 +60,10 @@ npm run build
   "mcpServers": {
     "phpbb": {
       "command": "node",
-      "args": ["--use-system-ca", "/absolute/path/to/Ivelt-MCP-Server/dist/index.js"],
+      "args": ["--use-system-ca", "/absolute/path/to/phpbb-mcp-server/dist/index.js"],
       "env": {
-        "PHPBB_SITE_NAME": "Diamond Aviators",
-        "PHPBB_BASE_URL": "https://www.diamondaviators.net/forum"
+        "PHPBB_SITE_NAME": "Example Forum",
+        "PHPBB_BASE_URL": "https://forum.example.com"
       }
     }
   }
@@ -78,19 +72,19 @@ npm run build
 
 ## Tools
 
-| Tool | What it returns |
-|---|---|
-| `search_posts(keywords, page?)` | Posts matching keywords (title, link, forum, author, snippet, date). |
-| `topics_by_author(author, page?)` | Topics started by a username, with reply + view counts. |
-| `posts_by_author(author, page?, keywords?)` | A user's visible posts plus authoritative/visible post-count handling when available. |
-| `profile_user(author, maxPages?)` | Public activity profile: post totals, topics started, interests, top topics, active hours/days, and sample posts. |
-| `read_topic(topicId, page?)` | One page of a topic's posts, including attachments/images when available. |
-| `list_forums()` | All forum sections from the board index. |
-| `list_topics(forumId, page?, sort?)` | Topics inside a forum. |
-| `my_notifications()` | Notifications for the logged-in user, if login succeeds on the target board. |
-| `my_messages()` | Private-message inbox for the logged-in user, if login succeeds on the target board. |
-| `health_check()` | Reachability + logged-in-session diagnostic. |
-| `forum_guide()` | Contents of `KNOWLEDGE.md`, intended for site-specific notes/customizations. |
+| Tool                                        | What it returns                                                                                                                                             |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `search_posts(keywords, page?)`             | Posts matching keywords (title, link, forum, author, snippet, date).                                                                                        |
+| `topics_by_author(author, page?)`           | Topics started by a username, with reply + view counts.                                                                                                     |
+| `posts_by_author(author, page?, keywords?)` | A user's visible posts plus authoritative/visible post-count handling when available.                                                                       |
+| `profile_user(author, maxPages?)`           | Public activity profile: post totals, topics started, interests, top topics, active hours/days, and sample posts.                                           |
+| `read_topic(topicId, page?)`                | One page of a topic's posts, including attachments/images when available.                                                                                   |
+| `list_forums()`                             | All forum sections from the board index.                                                                                                                    |
+| `list_topics(forumId, page?, sort?)`        | Topics inside a forum.                                                                                                                                      |
+| `my_notifications()`                        | Notifications for the logged-in user, if login succeeds on the target board.                                                                                |
+| `my_messages()`                             | Private-message inbox for the logged-in user, if login succeeds on the target board.                                                                        |
+| `health_check()`                            | Reachability + logged-in-session diagnostic.                                                                                                                |
+| `forum_guide()`                             | This deployment's optional site knowledge base — `KNOWLEDGE.md` (or the file named by `PHPBB_GUIDE_PATH`), intended for site-specific notes/customizations. |
 
 ## Notes
 
@@ -99,20 +93,28 @@ npm run build
 - phpBB search often ignores short/common words.
 - This project parses HTML. Theme/layout changes may require selector updates.
 
-## Testing
-
-This fork includes a small automated test suite:
+## Testing & CI
 
 ```bash
-npm run test
+npm run test           # hermetic unit tests (fixtures, no network)
+npm run test:coverage  # unit tests + coverage report
+npm run test:integration  # live tests against public phpBB boards (network)
+npm run typecheck      # tsc --noEmit over src AND tests
+npm run lint           # ESLint
+npm run format:check   # Prettier
 ```
 
-The tests cover:
-- generic env-var config
-- backward compatibility for ivelt env vars
+The unit tests cover:
+
+- generic env-var config, including required-variable and page-size handling
 - configurable URL resolution against another board
 - English-language phpBB parsing
 - configurable MCP server identity
+- an assertion that no registered tool or the server instructions mention the original single-site name
+
+The **integration tests** (`tests/integration/`) exercise the full client + parser pipeline against well-known public phpBB boards (phpbb.com/community, forum.videolan.org). They skip when a board is unreachable and fail only on real parse regressions. CI runs them weekly and on PRs that touch the parser/client code — not on every PR, to stay polite to third-party servers.
+
+CI (`.github/workflows/ci.yml`) runs lint, format check, typecheck, build, unit tests with coverage, and two startup smoke tests of the built server, across Ubuntu and macOS on Node 22 and 24. Dependabot keeps npm and GitHub Actions dependencies current weekly.
 
 ## License
 

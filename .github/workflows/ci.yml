@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # engines says >=22; prove the "or newer" part on the next LTS line too.
+        # macOS covers the platform local MCP servers most commonly run on
+        # (Claude Desktop); keep shell steps POSIX-portable — no GNU-only tools.
+        os: [ubuntu-latest, macos-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install (lockfile-faithful)
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Typecheck (src + tests)
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests (with coverage report)
+        run: npm run test:coverage
+
+      - name: Smoke test — fails fast without PHPBB_BASE_URL
+        run: |
+          set +e
+          output=$(node dist/index.js </dev/null 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          if [ "$code" -ne 1 ]; then
+            echo "expected exit code 1 without PHPBB_BASE_URL, got $code" >&2
+            exit 1
+          fi
+          echo "$output" | grep -q "PHPBB_BASE_URL" || {
+            echo "startup error should name the missing PHPBB_BASE_URL variable" >&2
+            exit 1
+          }
+
+      - name: Smoke test — boots cleanly with config
+        # Step-level timeout instead of GNU `timeout` — macOS runners don't ship it.
+        timeout-minutes: 2
+        run: |
+          PHPBB_BASE_URL=https://forum.example.com node dist/index.js </dev/null

@@ -30,6 +30,12 @@ export interface UserProfile {
   samplePosts: SearchResult[];
 }
 
+// Day-of-week and month name tables map a phpBB board's localized date words to
+// canonical English. English (the phpBB default) and Yiddish/Hebrew are covered
+// below. To support another language pack, add its weekday/month words as extra
+// keys pointing at the same English day / month number (e.g. `Lundi: "Monday"`,
+// `janvier: 1`); parseForumDate matches by the localized key, so no other change
+// is needed.
 const DOW: Record<string, string> = {
   Sunday: "Sunday",
   Monday: "Monday",
@@ -84,8 +90,8 @@ export interface ParsedDate {
   sortKey: number | null;
 }
 
-/** Best-effort parse of common phpBB date strings. Supports both English and the
- * original ivelt Yiddish/Hebrew forum date words. */
+/** Best-effort parse of common phpBB date strings. Supports both English and
+ * Yiddish/Hebrew forum date words (see DOW / MONTHS tables above). */
 export function parseForumDate(text: string | null | undefined): ParsedDate {
   const empty: ParsedDate = {
     dayOfWeek: null,
@@ -133,18 +139,11 @@ export function parseForumDate(text: string | null | undefined): ParsedDate {
 
   let sortKey: number | null = null;
   if (year !== null) {
-    sortKey =
-      year * 1e8 +
-      (month ?? 0) * 1e6 +
-      (day ?? 0) * 1e4 +
-      (hour24 ?? 0) * 100;
+    sortKey = year * 1e8 + (month ?? 0) * 1e6 + (day ?? 0) * 1e4 + (hour24 ?? 0) * 100;
   }
 
   return { dayOfWeek, hour24, year, month, day, sortKey };
 }
-
-// Backward-compatibility alias for callers still using the old name.
-export const parseIveltDate = parseForumDate;
 
 /** Build the aggregate profile from collected posts. */
 export function summarizePosts(
@@ -200,9 +199,7 @@ export function summarizePosts(
     .map(([forum, count]) => ({ forum, count }))
     .sort((a, b) => b.count - a.count);
 
-  const topTopics = [...topicCounts.values()]
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 15);
+  const topTopics = [...topicCounts.values()].sort((a, b) => b.count - a.count).slice(0, 15);
 
   return {
     author,

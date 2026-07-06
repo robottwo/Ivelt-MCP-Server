@@ -14,18 +14,20 @@ maintainer's approval.**
    cd <repo>
    git checkout -b my-change
    ```
-3. **Make your change.** Verify it builds:
+3. **Make your change.** Verify it passes the same checks CI runs:
    ```bash
    npm install
+   npm run lint && npm run format:check && npm run typecheck
    npm run build
+   npm test
    ```
 4. **Commit and push** to your fork:
    ```bash
    git commit -am "Describe your change"
    git push origin my-change
    ```
-5. **Open a Pull Request** from your branch to this repo's `main`. Describe *what*
-   you changed and *why*.
+5. **Open a Pull Request** from your branch to this repo's `main`. Describe _what_
+   you changed and _why_.
 
 The maintainer will review it, may ask for changes, and will merge it once approved.
 
@@ -34,6 +36,6 @@ The maintainer will review it, may ask for changes, and will merge it once appro
 - Keep pull requests focused — one logical change per PR is easier to review.
 - This project is **read-only** and uses only **public** forum data. Please don't add
   features that post/edit on the forum or that try to de-anonymize or track users.
-- Match the existing code style (TypeScript, small focused modules). Make sure
-  `npm run build` passes before opening the PR.
-- Be respectful of the ivelt community and the forum's terms of use.
+- Match the existing code style (TypeScript, small focused modules). CI enforces
+  ESLint, Prettier, typecheck, build, and the unit tests — run them locally first.
+- Be respectful of the forum communities this server is pointed at, and of each forum's terms of use.

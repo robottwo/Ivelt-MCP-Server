@@ -55,9 +55,6 @@ export interface PhpbbClient {
   checkConnectivity(): Promise<{ reachable: boolean; loggedIn: boolean }>;
 }
 
-// Backward-compatibility alias for the original ivelt-specific name.
-export type IveltClient = PhpbbClient;
-
 /**
  * Pure HTML -> typed-record functions. No network, no state. Each takes the
  * raw HTML string returned by the matching PhpbbClient method. Must never throw

@@ -9,11 +9,7 @@ import { registerTools } from "./tools.js";
  * Build the phpBB MCP server, wiring the given client + parsers into the
  * read-only forum tools. index.ts connects it to a transport.
  */
-export function buildServer(
-  config: PhpbbConfig,
-  client: PhpbbClient,
-  parsers: Parsers,
-): McpServer {
+export function buildServer(config: PhpbbConfig, client: PhpbbClient, parsers: Parsers): McpServer {
   const server = new McpServer(
     { name: config.siteName, version: "1.0.0" },
     {
@@ -25,6 +21,6 @@ export function buildServer(
         "If the forum content is in a language other than the user's, translate or summarize clearly in the user's language.",
     },
   );
-  registerTools(server, client, parsers);
+  registerTools(server, config, client, parsers);
   return server;
 }
