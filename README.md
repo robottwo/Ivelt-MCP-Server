@@ -72,19 +72,19 @@ npm run build
 
 ## Tools
 
-| Tool | What it returns |
-|---|---|
-| `search_posts(keywords, page?)` | Posts matching keywords (title, link, forum, author, snippet, date). |
-| `topics_by_author(author, page?)` | Topics started by a username, with reply + view counts. |
-| `posts_by_author(author, page?, keywords?)` | A user's visible posts plus authoritative/visible post-count handling when available. |
-| `profile_user(author, maxPages?)` | Public activity profile: post totals, topics started, interests, top topics, active hours/days, and sample posts. |
-| `read_topic(topicId, page?)` | One page of a topic's posts, including attachments/images when available. |
-| `list_forums()` | All forum sections from the board index. |
-| `list_topics(forumId, page?, sort?)` | Topics inside a forum. |
-| `my_notifications()` | Notifications for the logged-in user, if login succeeds on the target board. |
-| `my_messages()` | Private-message inbox for the logged-in user, if login succeeds on the target board. |
-| `health_check()` | Reachability + logged-in-session diagnostic. |
-| `forum_guide()` | This deployment's optional site knowledge base — `KNOWLEDGE.md` (or the file named by `PHPBB_GUIDE_PATH`), intended for site-specific notes/customizations. |
+| Tool                                        | What it returns                                                                                                                                             |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `search_posts(keywords, page?)`             | Posts matching keywords (title, link, forum, author, snippet, date).                                                                                        |
+| `topics_by_author(author, page?)`           | Topics started by a username, with reply + view counts.                                                                                                     |
+| `posts_by_author(author, page?, keywords?)` | A user's visible posts plus authoritative/visible post-count handling when available.                                                                       |
+| `profile_user(author, maxPages?)`           | Public activity profile: post totals, topics started, interests, top topics, active hours/days, and sample posts.                                           |
+| `read_topic(topicId, page?)`                | One page of a topic's posts, including attachments/images when available.                                                                                   |
+| `list_forums()`                             | All forum sections from the board index.                                                                                                                    |
+| `list_topics(forumId, page?, sort?)`        | Topics inside a forum.                                                                                                                                      |
+| `my_notifications()`                        | Notifications for the logged-in user, if login succeeds on the target board.                                                                                |
+| `my_messages()`                             | Private-message inbox for the logged-in user, if login succeeds on the target board.                                                                        |
+| `health_check()`                            | Reachability + logged-in-session diagnostic.                                                                                                                |
+| `forum_guide()`                             | This deployment's optional site knowledge base — `KNOWLEDGE.md` (or the file named by `PHPBB_GUIDE_PATH`), intended for site-specific notes/customizations. |
 
 ## Notes
 
@@ -93,20 +93,28 @@ npm run build
 - phpBB search often ignores short/common words.
 - This project parses HTML. Theme/layout changes may require selector updates.
 
-## Testing
-
-This fork includes a small automated test suite:
+## Testing & CI
 
 ```bash
-npm run test
+npm run test           # hermetic unit tests (fixtures, no network)
+npm run test:coverage  # unit tests + coverage report
+npm run test:integration  # live tests against public phpBB boards (network)
+npm run typecheck      # tsc --noEmit over src AND tests
+npm run lint           # ESLint
+npm run format:check   # Prettier
 ```
 
-The tests cover:
+The unit tests cover:
+
 - generic env-var config, including required-variable and page-size handling
 - configurable URL resolution against another board
 - English-language phpBB parsing
 - configurable MCP server identity
 - an assertion that no registered tool or the server instructions mention the original single-site name
+
+The **integration tests** (`tests/integration/`) exercise the full client + parser pipeline against well-known public phpBB boards (phpbb.com/community, forum.videolan.org). They skip when a board is unreachable and fail only on real parse regressions. CI runs them weekly and on PRs that touch the parser/client code — not on every PR, to stay polite to third-party servers.
+
+CI (`.github/workflows/ci.yml`) runs lint, format check, typecheck, build, unit tests with coverage, and two startup smoke tests of the built server, on Node 22 and 24. Dependabot keeps npm and GitHub Actions dependencies current weekly.
 
 ## License
 

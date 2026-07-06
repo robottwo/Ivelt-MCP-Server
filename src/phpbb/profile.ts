@@ -139,11 +139,7 @@ export function parseForumDate(text: string | null | undefined): ParsedDate {
 
   let sortKey: number | null = null;
   if (year !== null) {
-    sortKey =
-      year * 1e8 +
-      (month ?? 0) * 1e6 +
-      (day ?? 0) * 1e4 +
-      (hour24 ?? 0) * 100;
+    sortKey = year * 1e8 + (month ?? 0) * 1e6 + (day ?? 0) * 1e4 + (hour24 ?? 0) * 100;
   }
 
   return { dayOfWeek, hour24, year, month, day, sortKey };
@@ -203,9 +199,7 @@ export function summarizePosts(
     .map(([forum, count]) => ({ forum, count }))
     .sort((a, b) => b.count - a.count);
 
-  const topTopics = [...topicCounts.values()]
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 15);
+  const topTopics = [...topicCounts.values()].sort((a, b) => b.count - a.count).slice(0, 15);
 
   return {
     author,

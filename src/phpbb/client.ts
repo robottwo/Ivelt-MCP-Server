@@ -46,8 +46,7 @@ const SEARCH_CACHE_MAX_ENTRIES = 200; // bound memory in a long-running process
 const SEARCH_FLOOD_MAX_RETRIES = 2;
 const SEARCH_FLOOD_FALLBACK_MS = 15_000;
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 class PhpbbClientImpl implements PhpbbClient {
   private readonly config: PhpbbConfig;
@@ -78,9 +77,7 @@ class PhpbbClientImpl implements PhpbbClient {
     try {
       this.origin = new URL(config.baseUrl).origin;
     } catch {
-      throw new Error(
-        `Invalid PHPBB_BASE_URL (could not parse origin): "${config.baseUrl}"`,
-      );
+      throw new Error(`Invalid PHPBB_BASE_URL (could not parse origin): "${config.baseUrl}"`);
     }
     this.postsPerPage = config.postsPerPage > 0 ? config.postsPerPage : DEFAULT_PER_PAGE;
     this.topicsPerPage = config.topicsPerPage > 0 ? config.topicsPerPage : DEFAULT_PER_PAGE;
@@ -111,8 +108,7 @@ class PhpbbClientImpl implements PhpbbClient {
   ): Promise<string> {
     const start = this.startFor(page, this.topicsPerPage);
     // phpBB topic sort keys: v = views, r = replies; default order is by last post.
-    const sortParam =
-      sort === "views" ? "&sk=v&sd=d" : sort === "replies" ? "&sk=r&sd=d" : "";
+    const sortParam = sort === "views" ? "&sk=v&sd=d" : sort === "replies" ? "&sk=r&sd=d" : "";
     return this.fetchHtml(
       `${this.config.baseUrl}/viewforum.php?f=${encodeURIComponent(
         forumId,
@@ -123,9 +119,7 @@ class PhpbbClientImpl implements PhpbbClient {
   async getTopic(topicId: string, page = 1): Promise<string> {
     const start = this.startFor(page, this.postsPerPage);
     return this.fetchHtml(
-      `${this.config.baseUrl}/viewtopic.php?t=${encodeURIComponent(
-        topicId,
-      )}&start=${start}`,
+      `${this.config.baseUrl}/viewtopic.php?t=${encodeURIComponent(topicId)}&start=${start}`,
     );
   }
 
@@ -254,6 +248,7 @@ class PhpbbClientImpl implements PhpbbClient {
           "WAF/Cloudflare), so notifications and private messages can't be read " +
           "by this server. Browsing forums, reading topics, and searching all " +
           `work without login. (underlying: ${msg})`,
+        { cause: err },
       );
     }
     const hidden = extractLoginHiddenFields(formHtml);
@@ -353,10 +348,7 @@ class PhpbbClientImpl implements PhpbbClient {
       const cookieHeader = await this.jar.getCookieString(currentUrl);
       const headers = new Headers(currentInit.headers);
       headers.set("User-Agent", USER_AGENT);
-      headers.set(
-        "Accept",
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      );
+      headers.set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
       headers.set("Accept-Language", "en-US,en;q=0.9");
       if (cookieHeader) headers.set("Cookie", cookieHeader);
 
@@ -393,8 +385,7 @@ class PhpbbClientImpl implements PhpbbClient {
       if (!response.ok) {
         let message = `HTTP ${response.status} ${response.statusText} for ${currentUrl}`;
         if (response.status === 403) {
-          message +=
-            " — this may be Cloudflare blocking automated access to the site.";
+          message += " — this may be Cloudflare blocking automated access to the site.";
         }
         throw new Error(message);
       }
@@ -487,8 +478,7 @@ function classifyFetchError(err: unknown, url: string): Error {
   }
   // Dig the underlying cause out of Node's "fetch failed" wrapper, if present.
   const cause = (err as { cause?: unknown })?.cause;
-  const causeMessage =
-    cause instanceof Error ? cause.message : cause ? String(cause) : "";
+  const causeMessage = cause instanceof Error ? cause.message : cause ? String(cause) : "";
   const causeCode =
     cause && typeof cause === "object" && "code" in cause
       ? String((cause as { code?: unknown }).code ?? "")
@@ -555,10 +545,7 @@ function extractLoginHiddenFields(html: string): Record<string, string> {
 
 /** Extract a single HTML attribute value from a tag string (quoted or bare). */
 function attr(tag: string, name: string): string | null {
-  const re = new RegExp(
-    `\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s"'>]+))`,
-    "i",
-  );
+  const re = new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s"'>]+))`, "i");
   const m = tag.match(re);
   if (!m) return null;
   const raw = m[2] ?? m[3] ?? m[4] ?? "";

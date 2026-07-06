@@ -187,9 +187,7 @@ export function registerTools(
         // restricted/trashed forums) and can undercount, so also read the user's
         // authoritative lifetime count and surface both, plus the gap.
         const authoritative =
-          posts.length > 0
-            ? await authoritativePostCount(client, parsers, posts, author)
-            : null;
+          posts.length > 0 ? await authoritativePostCount(client, parsers, posts, author) : null;
         const visiblePosts = total;
         const out: Record<string, unknown> = {
           author,
@@ -214,7 +212,7 @@ export function registerTools(
     {
       title: "Profile a user (public activity)",
       description:
-        "The best tool for \"help me understand this nick.\" Builds a rounded portrait of a " +
+        'The best tool for "help me understand this nick." Builds a rounded portrait of a ' +
         `${site} user from their PUBLIC posts so you can write a strong character summary: ` +
         "their main interests and apparent expertise, the topics/causes they care about, their " +
         "tone and personality, how active they are and WHEN (active-hours histogram 0-23 + active " +
@@ -222,16 +220,16 @@ export function registerTools(
         "topics started, most-engaged topics, and a sample of posts with snippets. " +
         "PRESENT IT OVERVIEW-FIRST: do not just dump numbers. Begin with a substantial, reasoned " +
         "OVERVIEW that YOU synthesize from the data, BROKEN INTO SHORT LABELED SECTIONS by theme " +
-        "(e.g. \"Interests & expertise\", \"Views & values\", \"Tone & personality\", \"Activity " +
-        "pattern\") — easy to scan, not one long block. For each conclusion, give your reasoning " +
-        "AND back it with evidence: link the specific topic/post that supports it (e.g. \"argues " +
-        "X — see [topic title](url); jokes about Y — see [topic title](url)\"), drawing on the " +
+        '(e.g. "Interests & expertise", "Views & values", "Tone & personality", "Activity ' +
+        'pattern") — easy to scan, not one long block. For each conclusion, give your reasoning ' +
+        'AND back it with evidence: link the specific topic/post that supports it (e.g. "argues ' +
+        'X — see [topic title](url); jokes about Y — see [topic title](url)"), drawing on the ' +
         "topTopics and the post snippets. THEN, below the overview, give the detailed drill-down " +
         "(totals, interests/forums, activity rhythm, top topics) and cite the post links you use. " +
         "For a fun, " +
-        "engaging read, also add a short \"just for fun\" section — 3-5 lighthearted touches " +
+        'engaging read, also add a short "just for fun" section — 3-5 lighthearted touches ' +
         "inferred from the data: a guessed daily rhythm (roughly when they seem to wake up / go " +
-        "to sleep, read from the active-hours histogram) and playful analogies (\"if this nick " +
+        'to sleep, read from the active-hours histogram) and playful analogies ("if this nick ' +
         "were a car/animal/app, they'd be ...\"). Clearly frame those as playful guesses from " +
         "their public posting pattern, not facts about the real person. " +
         "Scope is strictly the public posting PERSONA — it does NOT, and must not " +
@@ -253,9 +251,7 @@ export function registerTools(
         // Best-effort: a failure here must not sink the whole profile.
         let topicsStarted: number | null = null;
         try {
-          topicsStarted = parsers.parsePostSearch(
-            await client.searchAuthorTopics(author),
-          ).total;
+          topicsStarted = parsers.parsePostSearch(await client.searchAuthorTopics(author)).total;
         } catch {
           /* leave null — the post-based profile below is the primary result */
         }
@@ -305,9 +301,7 @@ export function registerTools(
         }
         // No public posts found: explain why (unknown user, login required, etc.).
         const note =
-          collected.length === 0 && firstHtml !== null
-            ? parsers.detectNotice(firstHtml)
-            : null;
+          collected.length === 0 && firstHtml !== null ? parsers.detectNotice(firstHtml) : null;
         return json({ ...summary, ...extra, ...(note ? { note } : {}) });
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
@@ -367,8 +361,8 @@ export function registerTools(
         `List the topics inside a single ${site} forum by its forum id (the phpBB f= value, ` +
         "as a string). Returns each topic's id, title, link, author, reply/view counts, and " +
         "last-post time. Read-only. Use the optional " +
-        "1-based `page` to page through the forum. Use `sort` to order topics: \"recent\" " +
-        "(default), \"views\" (most-viewed first), or \"replies\" (most-replied first) — so you " +
+        '1-based `page` to page through the forum. Use `sort` to order topics: "recent" ' +
+        '(default), "views" (most-viewed first), or "replies" (most-replied first) — so you ' +
         "can find the most-viewed topics in a forum.",
       inputSchema: {
         forumId: z.string(),

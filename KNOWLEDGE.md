@@ -13,15 +13,18 @@ By default, the generic phpBB tools do not need any custom guide. But if you ada
 ## Suggested contents for a customized deployment
 
 ### 1. Forum overview
+
 - What site this is
 - Whether it is public or login-gated
 - Whether search works anonymously
 
 ### 2. Important forums
+
 - forum IDs and what they contain
 - which ones are noisy vs high signal
 
 ### 3. Language notes
+
 - English only?
 - mixed language?
 - board-specific jargon?
@@ -32,6 +35,7 @@ Hebrew script. phpBB search also ignores words shorter than 4 letters and very
 common words, so short/common single terms return nothing."
 
 ### 4. Tool playbook
+
 - `list_forums()` to discover forum ids
 - `list_topics(forumId)` to browse a section
 - `read_topic(topicId)` to inspect a thread
@@ -41,12 +45,14 @@ common words, so short/common single terms return nothing."
 - `health_check()` when results are empty or login-only tools fail
 
 ### 5. Known limitations
+
 - WAF / Cloudflare blocks
 - hidden forums not visible to anonymous scraping
 - theme changes that break selectors
 
 Examples of board-specific caveats worth recording here (these were once baked
 into the tool descriptions but are site-specific, so they live in the guide now):
+
 - **Login blocked:** some boards front the login page with Cloudflare/a WAF that
   returns 403 to automated requests, so `my_notifications` / `my_messages` don't
   work. Browsing, reading, and search all work anonymously.

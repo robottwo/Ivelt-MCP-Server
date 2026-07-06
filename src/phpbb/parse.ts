@@ -115,8 +115,19 @@ function firstInt(s: string | null | undefined): number | null {
  */
 function readableText(el: AnyNode): string {
   const blockTags = new Set([
-    "p", "div", "br", "li", "tr", "blockquote", "h1", "h2", "h3",
-    "h4", "h5", "h6", "pre",
+    "p",
+    "div",
+    "br",
+    "li",
+    "tr",
+    "blockquote",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "pre",
   ]);
   let out = "";
 
@@ -144,9 +155,7 @@ function readableText(el: AnyNode): string {
 
   // Normalize: trim each line, collapse intra-line whitespace, drop excess
   // blank lines, and trim the whole thing.
-  const lines = out
-    .split("\n")
-    .map((line) => line.replace(/[ \t\f\v ]+/g, " ").trim());
+  const lines = out.split("\n").map((line) => line.replace(/[ \t\f\v ]+/g, " ").trim());
   const collapsed: string[] = [];
   for (const line of lines) {
     if (line === "" && (collapsed.length === 0 || collapsed[collapsed.length - 1] === "")) {
@@ -210,7 +219,9 @@ function collectAttachments(
   const $body = $post.find(".postbody").first();
   const $bodyScope = $body.length ? $body : $post;
   $bodyScope
-    .find('.attachbox a[href*="download/file.php"], dl.attachbox a[href*="download/file.php"], a.postlink[href*="download/file.php"], a[href*="download/file.php"]')
+    .find(
+      '.attachbox a[href*="download/file.php"], dl.attachbox a[href*="download/file.php"], a.postlink[href*="download/file.php"], a[href*="download/file.php"]',
+    )
     .each((_i, a) => {
       const $a = $(a);
       add($a.attr("href"), $a.text());
@@ -409,15 +420,15 @@ function parseTopic(base: string, html: string): Topic {
   const titleHref = $titleLink.attr("href");
   const title = cleanText($titleLink.text() || $("h2.topic-title").first().text());
   const id = idFromUrl(base, titleHref, "t") ?? "";
-  const url =
-    absoluteUrl(base, titleHref) ??
-    (id ? `${base}viewtopic.php?t=${id}` : "");
+  const url = absoluteUrl(base, titleHref) ?? (id ? `${base}viewtopic.php?t=${id}` : "");
 
   // Pagination: the topic-level .pagination block (the one NOT nested inside a
   // post). Current page = li.active span; totalPages = max numeric page link.
   let page = 1;
   let totalPages: number | null = null;
-  const $pag = $(".pagination").filter((_i, el) => $(el).closest(".post").length === 0).first();
+  const $pag = $(".pagination")
+    .filter((_i, el) => $(el).closest(".post").length === 0)
+    .first();
   if ($pag.length) {
     const active = firstInt($pag.find("li.active span, li.active a").first().text());
     if (active) page = active;
@@ -468,10 +479,7 @@ function parseTopic(base: string, html: string): Topic {
     if (profName) author = profName;
     else {
       const bylineName = cleanText(
-        $post
-          .find("p.author a.username, p.author a.username-coloured")
-          .first()
-          .text(),
+        $post.find("p.author a.username, p.author a.username-coloured").first().text(),
       );
       if (bylineName) author = bylineName;
     }
@@ -525,8 +533,12 @@ function parseSearch(base: string, html: string): SearchResult[] {
     // Author of the topic/matched post: the poster username.
     let author: string | null = null;
     const posterName = cleanText(
-      $dl.find(".responsive-hide.left-box, .topic-poster").first()
-        .find("a.username, a.username-coloured").first().text(),
+      $dl
+        .find(".responsive-hide.left-box, .topic-poster")
+        .first()
+        .find("a.username, a.username-coloured")
+        .first()
+        .text(),
     );
     if (posterName) author = posterName;
 
@@ -583,9 +595,7 @@ function parsePostSearch(base: string, html: string): AuthorPostsResult {
   if (!$) return { total: null, posts: [] };
 
   // Total = the integer in the "found N results" heading.
-  const heading = cleanText(
-    $("h2.searchresults-title, .searchresults-title").first().text(),
-  );
+  const heading = cleanText($("h2.searchresults-title, .searchresults-title").first().text());
   const total = firstInt(heading);
 
   const posts: SearchResult[] = [];
@@ -770,7 +780,10 @@ function parsePrivateMessages(base: string, html: string): PrivateMessage[] {
     // Sender: the author/username in the row.
     let from: string | null = null;
     const sender = cleanText(
-      $row.find(".responsive-hide a.username, a.username, a.username-coloured, .pm-from").first().text(),
+      $row
+        .find(".responsive-hide a.username, a.username, a.username-coloured, .pm-from")
+        .first()
+        .text(),
     );
     if (sender) from = sender;
 
@@ -900,10 +913,7 @@ function parseAuthorPostCount(html: string, author: string): number | null {
     if (count !== null) return;
     const $post = $(el);
     const name = cleanText(
-      $post
-        .find(".postprofile a.username, .postprofile a.username-coloured")
-        .first()
-        .text(),
+      $post.find(".postprofile a.username, .postprofile a.username-coloured").first().text(),
     );
     if (name !== target) return;
     const n = firstInt($post.find(".postprofile .profile-posts").first().text());
