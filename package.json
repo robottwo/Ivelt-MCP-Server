@@ -1,5 +1,5 @@
 {
-  "name": "ivelt-mcp",
+  "name": "phpbb-mcp-server",
   "version": "1.0.0",
   "description": "Read-only MCP server for configurable phpBB forums. Runs locally; lets Claude search, browse, read, and profile public forum activity.",
   "type": "module",

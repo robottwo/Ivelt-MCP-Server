@@ -1,13 +1,14 @@
 // Record shapes returned by the parsers and surfaced by the MCP tools.
 //
-// ivelt.com is a phpBB 3.x forum (prosilver theme, right-to-left Yiddish/Hebrew).
-// All text fields may contain Yiddish/Hebrew (UTF-8) — never assume ASCII.
+// Verified against a phpBB 3.x board using the prosilver theme. Text fields carry
+// whatever language the board is written in (UTF-8, possibly right-to-left) —
+// never assume ASCII.
 
 /** A forum section on the board index. */
 export interface Forum {
   /** phpBB forum id (the f= value), as a string. */
   id: string;
-  /** Forum name, e.g. "וועלטליכע נייעס". */
+  /** Forum name, e.g. "General Discussion". */
   title: string;
   /** Absolute URL to the forum. */
   url: string;

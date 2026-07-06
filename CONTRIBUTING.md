@@ -36,4 +36,4 @@ The maintainer will review it, may ask for changes, and will merge it once appro
   features that post/edit on the forum or that try to de-anonymize or track users.
 - Match the existing code style (TypeScript, small focused modules). Make sure
   `npm run build` passes before opening the PR.
-- Be respectful of the ivelt community and the forum's terms of use.
+- Be respectful of the forum communities this server is pointed at, and of each forum's terms of use.

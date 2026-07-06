@@ -25,6 +25,6 @@ export function buildServer(
         "If the forum content is in a language other than the user's, translate or summarize clearly in the user's language.",
     },
   );
-  registerTools(server, client, parsers);
+  registerTools(server, config, client, parsers);
   return server;
 }

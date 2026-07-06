@@ -1,9 +1,14 @@
 // HTML parsers for phpBB forums.
 //
-// Pure HTML -> typed-record functions. No network, no state. Each takes the raw
-// HTML string returned by the matching IveltClient method and returns the record
+// Pure HTML -> typed-record functions. No network. Each takes the raw HTML
+// string returned by the matching PhpbbClient method and returns the record
 // type(s) from ../types.js. NONE of these functions may throw on empty/garbage/
 // logged-out input — they return [] (or, for parseTopic, a best-effort empty record).
+//
+// The only per-instance state is the base URL used to resolve relative links; it
+// is captured inside createParsers(baseUrl) and threaded explicitly into the
+// base-dependent functions, so multiple parser instances (e.g. several forums in
+// one process) never share a mutable global.
 //
 // Key phpBB/prosilver selectors:
 //   - forums use  a.forumtitle  (board index)
@@ -30,11 +35,9 @@ import type {
 } from "../types.js";
 import type { Parsers } from "../contract.js";
 
-// phpBB pages typically live under /forum/. Relative links such as
-// "./viewforum.php?f=6" or "viewtopic.php?t=5" resolve against this base.
-const DEFAULT_BASE_URL = "https://www.ivelt.com/forum/";
-let BASE_URL = DEFAULT_BASE_URL;
-
+/** Normalize a configured base URL into a form suitable for URL resolution:
+ *  no trailing slash duplication, exactly one trailing slash so relative links
+ *  like "./viewforum.php?f=6" resolve against the forum directory. */
 function normalizeBaseUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/`;
 }
@@ -54,16 +57,16 @@ function loadHtml(html: string): cheerio.CheerioAPI | null {
   }
 }
 
-/** Resolve a possibly-relative href to an absolute ivelt URL and strip the
- *  per-session  sid  param. Returns null when there is no usable href. */
-function absoluteUrl(href: string | undefined | null): string | null {
+/** Resolve a possibly-relative href to an absolute forum URL (against `base`)
+ *  and strip the per-session  sid  param. Returns null when there is no usable href. */
+function absoluteUrl(base: string, href: string | undefined | null): string | null {
   if (!href) return null;
   const trimmed = href.trim();
   if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith("javascript:")) {
     return null;
   }
   try {
-    const url = new URL(trimmed, BASE_URL);
+    const url = new URL(trimmed, base);
     url.searchParams.delete("sid");
     return url.toString();
   } catch {
@@ -73,10 +76,14 @@ function absoluteUrl(href: string | undefined | null): string | null {
 
 /** Extract a numeric phpBB id (t / f / p) from a URL's query string. The id can
  *  also appear in the fragment (e.g. viewtopic.php?p=123#p123). */
-function idFromUrl(href: string | undefined | null, param: "t" | "f" | "p"): string | null {
+function idFromUrl(
+  base: string,
+  href: string | undefined | null,
+  param: "t" | "f" | "p",
+): string | null {
   if (!href) return null;
   try {
-    const url = new URL(href, BASE_URL);
+    const url = new URL(href, base);
     const fromQuery = url.searchParams.get(param);
     if (fromQuery && /^\d+$/.test(fromQuery)) return fromQuery;
     // Fallback: scan the raw string (covers odd encodings / fragments).
@@ -97,7 +104,7 @@ function cleanText(s: string | null | undefined): string {
 /** Parse the first integer found in a string (e.g. "179 תגובות" -> 179). */
 function firstInt(s: string | null | undefined): number | null {
   if (!s) return null;
-  const m = s.replace(/[, ]/g, "").match(/\d+/);
+  const m = s.replace(/[, ]/g, "").match(/\d+/);
   return m ? parseInt(m[0], 10) : null;
 }
 
@@ -139,7 +146,7 @@ function readableText(el: AnyNode): string {
   // blank lines, and trim the whole thing.
   const lines = out
     .split("\n")
-    .map((line) => line.replace(/[ \t\f\v ]+/g, " ").trim());
+    .map((line) => line.replace(/[ \t\f\v ]+/g, " ").trim());
   const collapsed: string[] = [];
   for (const line of lines) {
     if (line === "" && (collapsed.length === 0 || collapsed[collapsed.length - 1] === "")) {
@@ -152,9 +159,9 @@ function readableText(el: AnyNode): string {
 
 /** Derive a readable file name from a URL: the last path segment, else a
  *  recognizable query value, else a generic fallback. */
-function fileNameFromUrl(rawUrl: string): string {
+function fileNameFromUrl(base: string, rawUrl: string): string {
   try {
-    const url = new URL(rawUrl, BASE_URL);
+    const url = new URL(rawUrl, base);
     const segment = url.pathname.split("/").filter(Boolean).pop();
     if (segment && segment !== "file.php") return decodeURIComponent(segment);
     // download/file.php uses query params (id=, avatar=) rather than a path name.
@@ -182,15 +189,19 @@ function isSmiley($img: Cheerio<AnyNode>): boolean {
 /** Collect a post's attachments — download links and inline images — from its
  *  `div.post` element, de-duplicated by absolute URL. Avatars and emoticons are
  *  excluded; only files attached to (and images embedded in) the post body count. */
-function collectAttachments($: cheerio.CheerioAPI, $post: Cheerio<AnyNode>): Attachment[] {
+function collectAttachments(
+  base: string,
+  $: cheerio.CheerioAPI,
+  $post: Cheerio<AnyNode>,
+): Attachment[] {
   const attachments: Attachment[] = [];
   const seen = new Set<string>();
 
   const add = (rawUrl: string | null | undefined, rawName: string): void => {
-    const url = absoluteUrl(rawUrl);
+    const url = absoluteUrl(base, rawUrl);
     if (!url || seen.has(url)) return;
     seen.add(url);
-    const name = cleanText(rawName) || cleanText(fileNameFromUrl(url)) || "attachment";
+    const name = cleanText(rawName) || cleanText(fileNameFromUrl(base, url)) || "attachment";
     attachments.push({ name, url });
   };
 
@@ -210,7 +221,7 @@ function collectAttachments($: cheerio.CheerioAPI, $post: Cheerio<AnyNode>): Att
     const $img = $(img);
     if (isSmiley($img)) return;
     const src = $img.attr("src") ?? "";
-    add(src, fileNameFromUrl(absoluteUrl(src) ?? src));
+    add(src, fileNameFromUrl(base, absoluteUrl(base, src) ?? src));
   });
 
   return attachments;
@@ -220,7 +231,7 @@ function collectAttachments($: cheerio.CheerioAPI, $post: Cheerio<AnyNode>): Att
 // parseForumIndex — board index (index.php)
 // ---------------------------------------------------------------------------
 
-function parseForumIndex(html: string): Forum[] {
+function parseForumIndex(base: string, html: string): Forum[] {
   const $ = loadHtml(html);
   if (!$) return [];
   const forums: Forum[] = [];
@@ -236,17 +247,16 @@ function parseForumIndex(html: string): Forum[] {
     $block.find("a.forumtitle").each((_j, a) => {
       const $a = $(a);
       const href = $a.attr("href");
-      const url = absoluteUrl(href);
-      const id = idFromUrl(href, "f");
+      const url = absoluteUrl(base, href);
+      const id = idFromUrl(base, href, "f");
       const title = cleanText($a.text());
       if (!url || !id || title === "") return;
       if (seen.has(id)) return;
       seen.add(id);
 
       // Description: the bare text node that follows the forumtitle's <br>,
-      // before any "די אחראים" (moderators) / "סוב פארום" (subforum) markup.
-      // We read the parent .list-inner text, strip the title, and take the
-      // first meaningful line.
+      // before any moderators / subforum markup. We read the parent
+      // .list-inner text, strip the title, and take the first meaningful line.
       let description: string | null = null;
       const dtText = $a.parent().contents();
       // Walk siblings after the anchor until we hit a <strong> or <a>.
@@ -287,8 +297,8 @@ function parseForumIndex(html: string): Forum[] {
     $("a.forumtitle").each((_i, a) => {
       const $a = $(a);
       const href = $a.attr("href");
-      const url = absoluteUrl(href);
-      const id = idFromUrl(href, "f");
+      const url = absoluteUrl(base, href);
+      const id = idFromUrl(base, href, "f");
       const title = cleanText($a.text());
       if (!url || !id || title === "" || seen.has(id)) return;
       seen.add(id);
@@ -303,16 +313,17 @@ function parseForumIndex(html: string): Forum[] {
 // parseForum — a forum's topic listing (viewforum.php)
 // ---------------------------------------------------------------------------
 
-function parseForum(html: string): TopicSummary[] {
+function parseForum(base: string, html: string): TopicSummary[] {
   const $ = loadHtml(html);
   if (!$) return [];
-  return collectTopicRows($, $("a.topictitle"));
+  return collectTopicRows(base, $, $("a.topictitle"));
 }
 
 /** Shared logic: turn each `a.topictitle` anchor into a TopicSummary by reading
  *  its enclosing topic row. Used by parseForum (the active-topics / search view
  *  uses the same markup, but parseSearch builds richer SearchResult records). */
 function collectTopicRows(
+  base: string,
   $: cheerio.CheerioAPI,
   anchors: Cheerio<AnyNode>,
 ): TopicSummary[] {
@@ -322,8 +333,8 @@ function collectTopicRows(
   anchors.each((_i, a) => {
     const $a = $(a);
     const href = $a.attr("href");
-    const url = absoluteUrl(href);
-    const id = idFromUrl(href, "t");
+    const url = absoluteUrl(base, href);
+    const id = idFromUrl(base, href, "t");
     const title = cleanText($a.text());
     if (!url || title === "") return;
     const dedupeKey = id ?? url;
@@ -333,14 +344,14 @@ function collectTopicRows(
     const $row = $a.closest("li.row, li");
     const $dl = $a.closest("dl");
 
-    // Topic starter: the "דורך <author>" line in the topic-poster / left-box block.
+    // Topic starter: the poster line in the topic-poster / left-box block.
     let author: string | null = null;
     const $poster = $dl.find(".topic-poster, .responsive-hide.left-box").first();
     const posterName = cleanText($poster.find("a.username, a.username-coloured").first().text());
     if (posterName) author = posterName;
 
     // Forum the topic belongs to (shown in search / active views): the
-    // viewforum link in the poster line ("אין <forum>") or the "געשריבן אין" line.
+    // viewforum link in the poster line.
     let forumTitle: string | null = null;
     const forumLink = $dl
       .find('a[href*="viewforum.php"]')
@@ -381,7 +392,7 @@ function collectTopicRows(
 // parseTopic — a single topic's posts (viewtopic.php)
 // ---------------------------------------------------------------------------
 
-function parseTopic(html: string): Topic {
+function parseTopic(base: string, html: string): Topic {
   const empty: Topic = {
     id: "",
     title: "",
@@ -397,10 +408,10 @@ function parseTopic(html: string): Topic {
   const $titleLink = $("h2.topic-title a").first();
   const titleHref = $titleLink.attr("href");
   const title = cleanText($titleLink.text() || $("h2.topic-title").first().text());
-  const id = idFromUrl(titleHref, "t") ?? "";
+  const id = idFromUrl(base, titleHref, "t") ?? "";
   const url =
-    absoluteUrl(titleHref) ??
-    (id ? `${BASE_URL}viewtopic.php?t=${id}` : "");
+    absoluteUrl(base, titleHref) ??
+    (id ? `${base}viewtopic.php?t=${id}` : "");
 
   // Pagination: the topic-level .pagination block (the one NOT nested inside a
   // post). Current page = li.active span; totalPages = max numeric page link.
@@ -439,15 +450,15 @@ function parseTopic(html: string): Topic {
     // post id: prefer the DOM id (pNNNN), else a permalink href.
     let postId: string | null = /^p(\d+)$/.exec(domId)?.[1] ?? null;
 
-    // Permalink: the h3 title link or the p.author "תגובה" anchor (p=NNNN#pNNNN).
+    // Permalink: the h3 title link or the p.author permalink anchor (p=NNNN#pNNNN).
     let permalink: string | null = null;
     const $permA = $post.find('.postbody h3 a, .postbody p.author a[href*="#p"]').first();
     const permHref = $permA.attr("href");
     if (permHref) {
-      permalink = absoluteUrl(permHref);
-      if (!postId) postId = idFromUrl(permHref, "p");
+      permalink = absoluteUrl(base, permHref);
+      if (!postId) postId = idFromUrl(base, permHref, "p");
     }
-    if (!permalink && postId) permalink = `${BASE_URL}viewtopic.php?p=${postId}#p${postId}`;
+    if (!permalink && postId) permalink = `${base}viewtopic.php?p=${postId}#p${postId}`;
 
     // Author: the profile column username, else the p.author byline username.
     let author: string | null = null;
@@ -474,7 +485,7 @@ function parseTopic(html: string): Topic {
     if (seenPostIds.has(key)) return;
     seenPostIds.add(key);
 
-    const attachments = collectAttachments($, $post);
+    const attachments = collectAttachments(base, $, $post);
 
     posts.push({ id: postId, author, postedAt, text, url: permalink, attachments });
   });
@@ -492,7 +503,7 @@ function parseTopic(html: string): Topic {
 // parseSearch — search results / active-topics view (search.php)
 // ---------------------------------------------------------------------------
 
-function parseSearch(html: string): SearchResult[] {
+function parseSearch(base: string, html: string): SearchResult[] {
   const $ = loadHtml(html);
   if (!$) return [];
   const results: SearchResult[] = [];
@@ -501,17 +512,17 @@ function parseSearch(html: string): SearchResult[] {
   $("a.topictitle").each((_i, a) => {
     const $a = $(a);
     const href = $a.attr("href");
-    const url = absoluteUrl(href);
+    const url = absoluteUrl(base, href);
     const title = cleanText($a.text());
     if (!url || title === "") return;
-    const topicId = idFromUrl(href, "t");
+    const topicId = idFromUrl(base, href, "t");
     const dedupeKey = topicId ?? url;
     if (seen.has(dedupeKey)) return;
     seen.add(dedupeKey);
 
     const $dl = $a.closest("dl");
 
-    // Author of the topic/matched post: the "דורך <author>" username.
+    // Author of the topic/matched post: the poster username.
     let author: string | null = null;
     const posterName = cleanText(
       $dl.find(".responsive-hide.left-box, .topic-poster").first()
@@ -519,7 +530,7 @@ function parseSearch(html: string): SearchResult[] {
     );
     if (posterName) author = posterName;
 
-    // Forum: the viewforum link ("אין <forum>" / "געשריבן אין <forum>").
+    // Forum: the viewforum link for the result row.
     let forumTitle: string | null = null;
     const forumLink = $dl
       .find('a[href*="viewforum.php"]')
@@ -567,7 +578,7 @@ function parseSearch(html: string): SearchResult[] {
 // `h2.searchresults-title` heading ("found N results").
 // ---------------------------------------------------------------------------
 
-function parsePostSearch(html: string): AuthorPostsResult {
+function parsePostSearch(base: string, html: string): AuthorPostsResult {
   const $ = loadHtml(html);
   if (!$) return { total: null, posts: [] };
 
@@ -588,14 +599,14 @@ function parsePostSearch(html: string): AuthorPostsResult {
       .find(".postbody h3 a, h3.posttitle a, a.posttitle, .postbody h3 a.postlink")
       .first();
     const href = $titleA.attr("href");
-    const url = absoluteUrl(href);
+    const url = absoluteUrl(base, href);
     const title = cleanText($titleA.text());
     if (!url || title === "") return;
 
-    const postId = idFromUrl(href, "p");
-    // Topic id from the "אשכול:" (topic) link in the row; fall back to the title href.
+    const postId = idFromUrl(base, href, "p");
+    // Topic id from the topic link in the row; fall back to the title href.
     const $topicLink = $post.find('a[href*="viewtopic.php?t="]').first();
-    const topicId = idFromUrl($topicLink.attr("href"), "t") ?? idFromUrl(href, "t");
+    const topicId = idFromUrl(base, $topicLink.attr("href"), "t") ?? idFromUrl(base, href, "t");
     const dedupeKey = postId ?? url;
     if (seen.has(dedupeKey)) return;
     seen.add(dedupeKey);
@@ -633,8 +644,8 @@ function parsePostSearch(html: string): AuthorPostsResult {
       if (s) snippet = s;
     }
 
-    // Posted-at: prosilver search results put the date in dd.search-result-date
-    // (e.g. "מאנטאג מאי 25, 2026 2:18 am"); fall back to a <time> element.
+    // Posted-at: prosilver search results put the date in dd.search-result-date;
+    // fall back to a <time> element.
     let postedAt: string | null = null;
     const dateText = cleanText($post.find("dd.search-result-date").first().text());
     if (dateText) postedAt = dateText;
@@ -643,8 +654,8 @@ function parsePostSearch(html: string): AuthorPostsResult {
       if ($time.length) postedAt = cleanText($time.text());
     }
 
-    // Reply / view counts of the topic this post is in (shown as "תגובות: N" /
-    // "געזען: N" dd cells in each result block).
+    // Reply / view counts of the topic this post is in (shown as replies / views
+    // dd cells in each result block).
     let replies: number | null = null;
     let views: number | null = null;
     $post.find("dd").each((_k, dd) => {
@@ -664,8 +675,8 @@ function parsePostSearch(html: string): AuthorPostsResult {
 // ---------------------------------------------------------------------------
 
 // NOTE: built against standard phpBB markup; unverified against a live logged-in
-// session because login is blocked (see README). Adjust selectors if needed.
-function parseNotifications(html: string): Notification[] {
+// session because login is often blocked (see README). Adjust selectors if needed.
+function parseNotifications(base: string, html: string): Notification[] {
   const $ = loadHtml(html);
   if (!$) return [];
   const notifications: Notification[] = [];
@@ -673,8 +684,8 @@ function parseNotifications(html: string): Notification[] {
 
   // phpBB standard: the notifications dropdown/list is `.notification_list`,
   // with each entry as an `li` (often `a.notification-block`) containing the
-  // notification text, a time, and an unread marker. This matches what the
-  // official ivelt Android app selects. We are lenient about the inner markup.
+  // notification text, a time, and an unread marker. We are lenient about the
+  // inner markup.
   const items = $(
     ".notification_list li, .notification_list a.notification-block, " +
       "ul.notification-list li, .notifications li",
@@ -686,7 +697,7 @@ function parseNotifications(html: string): Notification[] {
     // The link the notification points to.
     const $a = $el.is("a") ? $el : $el.find("a").first();
     const href = $a.attr("href");
-    const url = absoluteUrl(href);
+    const url = absoluteUrl(base, href);
 
     // Text: prefer an explicit `.notification_title` / `.notification-title`,
     // else the anchor/item text (minus the time).
@@ -726,8 +737,8 @@ function parseNotifications(html: string): Notification[] {
 // ---------------------------------------------------------------------------
 
 // NOTE: built against standard phpBB markup; unverified against a live logged-in
-// session because login is blocked (see README). Adjust selectors if needed.
-function parsePrivateMessages(html: string): PrivateMessage[] {
+// session because login is often blocked (see README). Adjust selectors if needed.
+function parsePrivateMessages(base: string, html: string): PrivateMessage[] {
   const $ = loadHtml(html);
   if (!$) return [];
   const messages: PrivateMessage[] = [];
@@ -754,7 +765,7 @@ function parsePrivateMessages(html: string): PrivateMessage[] {
     }
     const subject = cleanText($subject.text());
     if (subject === "") return;
-    const url = absoluteUrl($subject.attr("href"));
+    const url = absoluteUrl(base, $subject.attr("href"));
 
     // Sender: the author/username in the row.
     let from: string | null = null;
@@ -795,8 +806,10 @@ function parsePrivateMessages(html: string): PrivateMessage[] {
 // is a normal results page (or is empty/unparseable). Never throws.
 // ---------------------------------------------------------------------------
 
-// Classification patterns. Pages are Yiddish/Hebrew, occasionally English, so
-// each kind matches both. Order matters: the first kind that matches wins.
+// Classification patterns. Boards may render notices in English or another
+// language pack (the Yiddish/Hebrew wording below is one such pack), so each
+// kind matches multiple phrasings. Order matters: the first kind that matches
+// wins. To support another language pack, add its wording to the relevant regex.
 const NOTICE_PATTERNS: ReadonlyArray<{ kind: SearchNotice["kind"]; re: RegExp }> = [
   {
     kind: "words_ignored",
@@ -872,8 +885,8 @@ function detectNotice(html: string): SearchNotice | null {
 // phpBB exposes TWO different "total posts" numbers: the search-results count
 // (filtered to what the viewer can read) and `user_posts` (the authoritative
 // lifetime count). The latter is shown on the member profile (login-gated here)
-// AND, publicly, in the `.profile-posts` ("תגובות: N") line of every post's
-// profile block on a topic page. We read it from there.
+// AND, publicly, in the `.profile-posts` line of every post's profile block on a
+// topic page. We read it from there.
 // ---------------------------------------------------------------------------
 
 function parseAuthorPostCount(html: string, author: string): number | null {
@@ -899,19 +912,22 @@ function parseAuthorPostCount(html: string, author: string): number | null {
   return count;
 }
 
+/**
+ * Build a set of parsers bound to a specific forum base URL. All base-dependent
+ * link resolution closes over this instance's `base`, so several parser
+ * instances can coexist in one process without sharing mutable state.
+ */
 export function createParsers(baseUrl: string): Parsers {
-  BASE_URL = normalizeBaseUrl(baseUrl);
+  const base = normalizeBaseUrl(baseUrl);
   return {
-    parseForumIndex,
-    parseForum,
-    parseTopic,
-    parseSearch,
-    parsePostSearch,
+    parseForumIndex: (html) => parseForumIndex(base, html),
+    parseForum: (html) => parseForum(base, html),
+    parseTopic: (html) => parseTopic(base, html),
+    parseSearch: (html) => parseSearch(base, html),
+    parsePostSearch: (html) => parsePostSearch(base, html),
     parseAuthorPostCount,
     detectNotice,
-    parseNotifications,
-    parsePrivateMessages,
+    parseNotifications: (html) => parseNotifications(base, html),
+    parsePrivateMessages: (html) => parsePrivateMessages(base, html),
   };
 }
-
-export const parsers: Parsers = createParsers(DEFAULT_BASE_URL);

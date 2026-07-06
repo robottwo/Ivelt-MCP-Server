@@ -26,6 +26,11 @@ By default, the generic phpBB tools do not need any custom guide. But if you ada
 - mixed language?
 - board-specific jargon?
 
+Example (for a Yiddish/Hebrew board like the one this server was first built for):
+"The forum is written in Yiddish/Hebrew, so search keywords match best in
+Hebrew script. phpBB search also ignores words shorter than 4 letters and very
+common words, so short/common single terms return nothing."
+
 ### 4. Tool playbook
 - `list_forums()` to discover forum ids
 - `list_topics(forumId)` to browse a section
@@ -39,5 +44,13 @@ By default, the generic phpBB tools do not need any custom guide. But if you ada
 - WAF / Cloudflare blocks
 - hidden forums not visible to anonymous scraping
 - theme changes that break selectors
+
+Examples of board-specific caveats worth recording here (these were once baked
+into the tool descriptions but are site-specific, so they live in the guide now):
+- **Login blocked:** some boards front the login page with Cloudflare/a WAF that
+  returns 403 to automated requests, so `my_notifications` / `my_messages` don't
+  work. Browsing, reading, and search all work anonymously.
+- **"Thanks"/like counts not public:** some boards only show the thanks button to
+  logged-in users, so there is no public per-topic thanks count to read.
 
 If you are deploying this for a specific board, replace this file with notes for that board.
