@@ -14,13 +14,16 @@ concurrency:
 
 jobs:
   test:
-    name: Node ${{ matrix.node }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         # engines says >=22; prove the "or newer" part on the next LTS line too.
+        # macOS covers the platform local MCP servers most commonly run on
+        # (Claude Desktop); keep shell steps POSIX-portable — no GNU-only tools.
+        os: [ubuntu-latest, macos-latest]
         node: [22, 24]
     steps:
       - uses: actions/checkout@v4
@@ -65,5 +68,7 @@ jobs:
           }
 
       - name: Smoke test — boots cleanly with config
+        # Step-level timeout instead of GNU `timeout` — macOS runners don't ship it.
+        timeout-minutes: 2
         run: |
-          PHPBB_BASE_URL=https://forum.example.com timeout 30 node dist/index.js </dev/null
+          PHPBB_BASE_URL=https://forum.example.com node dist/index.js </dev/null

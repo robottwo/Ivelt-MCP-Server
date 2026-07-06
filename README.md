@@ -114,7 +114,7 @@ The unit tests cover:
 
 The **integration tests** (`tests/integration/`) exercise the full client + parser pipeline against well-known public phpBB boards (phpbb.com/community, forum.videolan.org). They skip when a board is unreachable and fail only on real parse regressions. CI runs them weekly and on PRs that touch the parser/client code — not on every PR, to stay polite to third-party servers.
 
-CI (`.github/workflows/ci.yml`) runs lint, format check, typecheck, build, unit tests with coverage, and two startup smoke tests of the built server, on Node 22 and 24. Dependabot keeps npm and GitHub Actions dependencies current weekly.
+CI (`.github/workflows/ci.yml`) runs lint, format check, typecheck, build, unit tests with coverage, and two startup smoke tests of the built server, across Ubuntu and macOS on Node 22 and 24. Dependabot keeps npm and GitHub Actions dependencies current weekly.
 
 ## License
 
