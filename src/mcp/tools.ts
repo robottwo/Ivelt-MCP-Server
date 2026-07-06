@@ -7,8 +7,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { IveltClient, Parsers } from "../contract.js";
-import { summarizePosts } from "../ivelt/profile.js";
+import type { PhpbbClient, Parsers } from "../contract.js";
+import { summarizePosts } from "../phpbb/profile.js";
 
 /** Politeness cap on how many result pages profile_user will fetch. */
 const PROFILE_MAX_PAGES = 40;
@@ -36,7 +36,7 @@ function fail(message: string) {
  * posts and read it from there. Best-effort: returns null on any failure.
  */
 async function authoritativePostCount(
-  client: IveltClient,
+  client: PhpbbClient,
   parsers: Parsers,
   posts: Array<{ url: string }>,
   author: string,
@@ -59,7 +59,7 @@ async function authoritativePostCount(
  */
 export function registerTools(
   server: McpServer,
-  client: IveltClient,
+  client: PhpbbClient,
   parsers: Parsers,
 ): void {
   server.registerTool(

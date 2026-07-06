@@ -1,35 +1,59 @@
-// Runtime configuration (credentials + base URL), loaded from the environment.
+// Runtime configuration (site metadata + optional credentials), loaded from the environment.
 
 import { config as loadEnv } from "dotenv";
 
 loadEnv();
 
-export interface IveltConfig {
-  /** ivelt.com account username. */
+export interface PhpbbConfig {
+  /** Human-friendly site name shown in server metadata/tool descriptions. */
+  siteName: string;
+  /** Optional forum account username. */
   username: string;
-  /** ivelt.com account password. */
+  /** Optional forum account password. */
   password: string;
   /** Forum base URL, no trailing slash, e.g. "https://www.ivelt.com/forum". */
   baseUrl: string;
 }
 
+// Backward-compatibility alias for the original ivelt-specific name.
+export type IveltConfig = PhpbbConfig;
+
 const DEFAULT_BASE_URL = "https://www.ivelt.com/forum";
 
+function trimEnv(name: string): string {
+  return process.env[name]?.trim() ?? "";
+}
+
+function inferSiteName(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname.replace(/^www\./, "");
+  } catch {
+    return "phpBB forum";
+  }
+}
+
 /**
- * Read config from the environment (.env). Throws if credentials are missing,
- * so the failure is obvious at startup rather than on the first request.
+ * Read config from the environment (.env).
+ *
+ * Preferred generic vars:
+ *   - PHPBB_SITE_NAME
+ *   - PHPBB_BASE_URL
+ *   - PHPBB_USERNAME
+ *   - PHPBB_PASSWORD
+ *
+ * Legacy ivelt vars remain supported for backward compatibility:
+ *   - IVELT_BASE_URL
+ *   - IVELT_USERNAME
+ *   - IVELT_PASSWORD
  */
-export function getConfig(): IveltConfig {
-  const username = process.env.IVELT_USERNAME?.trim() ?? "";
-  const password = process.env.IVELT_PASSWORD ?? "";
-  const baseUrl = (process.env.IVELT_BASE_URL?.trim() || DEFAULT_BASE_URL).replace(
+export function getConfig(): PhpbbConfig {
+  const baseUrl = (trimEnv("PHPBB_BASE_URL") || trimEnv("IVELT_BASE_URL") || DEFAULT_BASE_URL).replace(
     /\/+$/,
     "",
   );
-  if (!username || !password) {
-    throw new Error(
-      "Missing ivelt credentials: set IVELT_USERNAME and IVELT_PASSWORD in .env",
-    );
-  }
-  return { username, password, baseUrl };
+  const siteName = trimEnv("PHPBB_SITE_NAME") || inferSiteName(baseUrl);
+  const username = trimEnv("PHPBB_USERNAME") || trimEnv("IVELT_USERNAME");
+  const password = process.env.PHPBB_PASSWORD ?? process.env.IVELT_PASSWORD ?? "";
+
+  return { siteName, username, password, baseUrl };
 }

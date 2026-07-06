@@ -1,6 +1,6 @@
 // The two interfaces that decouple the HTTP layer from the parsing layer:
 //
-//   IveltClient — fetches raw HTML from ivelt's phpBB pages (client.ts)
+//   PhpbbClient — fetches raw HTML from phpBB pages (client.ts)
 //   Parsers     — turn that HTML into typed records (parse.ts)
 //
 // The MCP tools depend only on these interfaces; index.ts wires the concretes.
@@ -17,7 +17,7 @@ import type {
 } from "./types.js";
 
 /**
- * Authenticated, rate-limited fetcher for ivelt's phpBB pages.
+ * Authenticated, rate-limited fetcher for phpBB pages.
  * Each method returns the RAW HTML of the relevant page (a string).
  * The client owns: login + session cookies, a browser User-Agent, polite
  * rate limiting, and knowledge of phpBB URL shapes. It does NOT parse HTML.
@@ -25,7 +25,7 @@ import type {
  * Lazy login: methods must ensure a valid session first (logging in on demand),
  * so callers can invoke any method without calling login() themselves.
  */
-export interface IveltClient {
+export interface PhpbbClient {
   /** Log in using the configured credentials and establish a session. Idempotent. */
   login(): Promise<void>;
   /** Board index page (list of forums). */
@@ -48,16 +48,19 @@ export interface IveltClient {
   getNotifications(): Promise<string>;
   /** The logged-in user's private-message inbox page (UCP). */
   getPrivateMessages(): Promise<string>;
-  /** Fetch a single post/topic page by its absolute ivelt URL (e.g. a post permalink).
+  /** Fetch a single post/topic page by its absolute forum URL (e.g. a post permalink).
    *  Used to read a user's authoritative lifetime post count from the post profile. */
   getPostPage(url: string): Promise<string>;
   /** Lightweight diagnostic: is the forum reachable, and does the session look logged in? */
   checkConnectivity(): Promise<{ reachable: boolean; loggedIn: boolean }>;
 }
 
+// Backward-compatibility alias for the original ivelt-specific name.
+export type IveltClient = PhpbbClient;
+
 /**
  * Pure HTML -> typed-record functions. No network, no state. Each takes the
- * raw HTML string returned by the matching IveltClient method. Must never throw
+ * raw HTML string returned by the matching PhpbbClient method. Must never throw
  * on unexpected/empty markup — return an empty array (or a best-effort record).
  */
 export interface Parsers {
@@ -67,7 +70,7 @@ export interface Parsers {
   parseSearch(html: string): SearchResult[];
   /** Parse an "all posts by a user" search-results page: total count + the page's posts. */
   parsePostSearch(html: string): AuthorPostsResult;
-  /** Read a user's authoritative lifetime post count ("תגובות: N") from the post-profile
+  /** Read a user's authoritative lifetime post count (e.g. "Posts: N") from the post-profile
    *  block of one of their posts on a topic page. Returns null if not found. */
   parseAuthorPostCount(html: string, author: string): number | null;
   /** Classify a phpBB notice/message page (why a search returned nothing).

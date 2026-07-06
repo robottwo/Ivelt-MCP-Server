@@ -1,31 +1,28 @@
-// Builds the ivelt MCP server and registers the read-only tools on it.
+// Builds the configurable phpBB MCP server and registers the read-only tools on it.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { IveltClient, Parsers } from "../contract.js";
+import type { PhpbbConfig } from "../config.js";
+import type { PhpbbClient, Parsers } from "../contract.js";
 import { registerTools } from "./tools.js";
 
 /**
- * Build the ivelt MCP server, wiring the given client + parsers into the
+ * Build the phpBB MCP server, wiring the given client + parsers into the
  * read-only forum tools. index.ts connects it to a transport.
  */
-export function buildServer(client: IveltClient, parsers: Parsers): McpServer {
+export function buildServer(
+  config: PhpbbConfig,
+  client: PhpbbClient,
+  parsers: Parsers,
+): McpServer {
   const server = new McpServer(
-    { name: "ivelt", version: "1.0.0" },
+    { name: config.siteName, version: "1.0.0" },
     {
       instructions:
-        "This forum is in Yiddish/Hebrew. If you're unsure about terms, how the forum " +
-        "works, or which tool to use, call `forum_guide` first — it returns a glossary, " +
-        "forum mechanics, and a tool playbook. " +
-        "LANGUAGE: write your answers in very simple, plain English (short words and " +
-        "sentences). If you write any Yiddish, use THIS community's Yiddish — the " +
-        "chassidish/heimish Yiddish, spelled phonetically and mixed with loshn-koydesh " +
-        "(Hebrew/Aramaic) words, exactly as it appears in the forum posts. Do NOT use " +
-        "standard/YIVO/academic or 'daytshmerish' Yiddish — this community doesn't write " +
-        "that way. Mirror the spelling and wording you actually see in the posts. " +
-        "Always cite your sources: when you answer using these tools, link the source for " +
-        "what you report — each result/post/topic has a `url` field. Keep it brief and " +
-        "readable: short inline links (e.g. the topic title linking to its url), not a " +
-        "dump of raw URLs or a link for every line.",
+        `You are connected to the phpBB forum ${config.siteName}. ` +
+        "Use `forum_guide` first if you need site-specific context or workflow guidance. " +
+        "Always cite your sources when answering from forum data — each result/post/topic has a `url` field. " +
+        "Keep citations readable: short inline links, not raw URL dumps. " +
+        "If the forum content is in a language other than the user's, translate or summarize clearly in the user's language.",
     },
   );
   registerTools(server, client, parsers);

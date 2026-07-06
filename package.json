@@ -1,7 +1,7 @@
 {
   "name": "ivelt-mcp",
   "version": "1.0.0",
-  "description": "Read-only MCP server for the ivelt.com phpBB forum. Runs locally; lets Claude search, browse, read, and profile public forum activity.",
+  "description": "Read-only MCP server for configurable phpBB forums. Runs locally; lets Claude search, browse, read, and profile public forum activity.",
   "type": "module",
   "license": "MIT",
   "private": true,
@@ -11,7 +11,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node --use-system-ca dist/index.js",
-    "dev": "node --use-system-ca --import tsx src/index.ts"
+    "dev": "node --use-system-ca --import tsx src/index.ts",
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

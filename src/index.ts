@@ -1,19 +1,20 @@
 // MCP server entry point. Wires the HTTP client + parsers into the MCP server
-// and serves it over stdio to Claude Desktop.
+// and serves it over stdio to the MCP client.
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { getConfig } from "./config.js";
-import { createIveltClient } from "./ivelt/client.js";
-import { parsers } from "./ivelt/parse.js";
+import { createPhpbbClient } from "./phpbb/client.js";
+import { createParsers } from "./phpbb/parse.js";
 import { buildServer } from "./mcp/server.js";
 
 async function main(): Promise<void> {
-  const client = createIveltClient(getConfig());
-  const server = buildServer(client, parsers);
+  const config = getConfig();
+  const client = createPhpbbClient(config);
+  const server = buildServer(config, client, createParsers(config.baseUrl));
   await server.connect(new StdioServerTransport());
 }
 
 main().catch((err) => {
-  console.error("ivelt-mcp failed to start:", err);
+  console.error("phpbb-mcp failed to start:", err);
   process.exit(1);
 });

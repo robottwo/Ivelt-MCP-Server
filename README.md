@@ -1,125 +1,119 @@
-# ivelt MCP Server
+# phpBB MCP Server
 
-A local [Model Context Protocol](https://modelcontextprotocol.io) server that lets **Claude** read the **[ivelt.com](https://www.ivelt.com)** forum — a Yiddish/Hebrew [phpBB](https://www.phpbb.com) community board.
+A local [Model Context Protocol](https://modelcontextprotocol.io) server for **read-only access to phpBB forums**.
 
-ivelt has no API, so this server reads the ordinary public forum pages and turns them into clean, structured results Claude can use. It is **read-only** — it never posts, replies, or messages — and it runs entirely on your own machine.
+It fetches ordinary phpBB HTML pages, parses them into structured results, and exposes that data as MCP tools. No posting, replying, messaging, or moderation side effects.
+
+## What changed
+
+This fork generalizes the original ivelt-only project into a **configurable multi-site phpBB MCP**:
+
+- configurable `PHPBB_BASE_URL`
+- configurable `PHPBB_SITE_NAME`
+- parser factory that resolves links against the configured forum
+- date parsing that works for both **English** phpBB timestamps and the original **ivelt** Yiddish/Hebrew timestamps
+- backward compatibility for legacy `IVELT_*` env vars
 
 ## What it can do
 
-Ask Claude things like:
-
-- *"Search ivelt for posts about [topic]."*
-- *"List the forum sections on ivelt."*
-- *"Show the recent topics in forum 70."*
-- *"Read topic 81991 and summarize the discussion."*
-- *"How many posts has the user [username] written, and what are they about?"*
-- *"Build an activity profile of the ivelt user [username]."*
-
-All forum content is in **Yiddish/Hebrew**, so results come back in those languages — Claude can translate or summarize them for you.
-
-## How it works
-
-```
-ivelt.com (phpBB)  ──HTML──▶  HTTP client (browser UA, session, rate-limited)
-                                   │  raw HTML
-                                   ▼
-                              HTML parsers (cheerio)  ──records──▶  MCP tools  ──▶  Claude
-```
-
-Each tool call fetches the relevant page live and parses it, so answers reflect the forum as it is right now. There is no database or cache.
+- search posts by keyword
+- list forums
+- list topics in a forum
+- read a topic
+- list topics started by a given author
+- list posts by a given author
+- build a public activity profile for an author
+- optionally read notifications / private messages when login works on the target board
 
 ## Requirements
 
-- [Node.js](https://nodejs.org) 22 or newer
-- A desktop MCP client — these instructions assume **Claude Desktop**
+- Node.js 22+
+- An MCP client such as Claude Desktop or Hermes
 
-## Quick start
+## Configuration
 
-**1. Get the code.** Clone the repo, or download the ZIP and unzip it into a folder — e.g. `C:\ivelt-mcp`.
+Create a `.env` file or inject these variables via your MCP client config:
 
-**2. Install and build.** Open a terminal *in that folder* and run:
+```env
+PHPBB_SITE_NAME=Diamond Aviators
+PHPBB_BASE_URL=https://www.diamondaviators.net/forum
+PHPBB_USERNAME=
+PHPBB_PASSWORD=
+```
+
+### Backward compatibility
+
+These legacy env vars still work:
+
+```env
+IVELT_BASE_URL=https://www.ivelt.com/forum
+IVELT_USERNAME=...
+IVELT_PASSWORD=...
+```
+
+## Install and build
 
 ```bash
 npm install
+npm run test
 npm run build
 ```
 
-This compiles the server to `dist/` (it creates `dist/index.js`, which Claude will launch).
-
-**3. Add it to Claude Desktop.** Open Claude Desktop → **Settings → Developer → Edit Config**. That opens `claude_desktop_config.json`. Add the `ivelt` entry below, using the **absolute path** to your folder with **forward slashes**:
+## Claude Desktop example
 
 ```json
 {
   "mcpServers": {
-    "ivelt": {
+    "phpbb": {
       "command": "node",
-      "args": ["--use-system-ca", "C:/ivelt-mcp/dist/index.js"]
+      "args": ["--use-system-ca", "/absolute/path/to/Ivelt-MCP-Server/dist/index.js"],
+      "env": {
+        "PHPBB_SITE_NAME": "Diamond Aviators",
+        "PHPBB_BASE_URL": "https://www.diamondaviators.net/forum"
+      }
     }
   }
 }
 ```
 
-If you already have other servers, just add the `"ivelt": { ... }` block inside the existing `mcpServers` object (separate each entry with a comma).
-
-**4. Restart Claude Desktop.** Fully quit it (from the system tray — not just closing the window) and reopen it. The ivelt tools will load.
-
-**5. Try it.** Ask Claude, for example: *"List the forum sections on ivelt"* or *"Build an activity profile of the ivelt user [username]."*
-
-> **About `--use-system-ca`:** it tells Node to trust your operating system's certificate store. It's harmless on a normal connection and is needed on networks behind a TLS-inspecting proxy (common on corporate/MSP networks). You can drop it if you don't need it.
-
-> **macOS/Linux:** the config file is at `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `~/.config/Claude/claude_desktop_config.json` (Linux), and your path would look like `/Users/you/ivelt-mcp/dist/index.js`.
-
 ## Tools
-
-All tools are **read-only**.
 
 | Tool | What it returns |
 |---|---|
 | `search_posts(keywords, page?)` | Posts matching keywords (title, link, forum, author, snippet, date). |
-| `topics_by_author(author, page?)` | Topics **started** by a username, with **view + reply counts** (rank by `views` to find a user's most-viewed topics). |
-| `posts_by_author(author, page?, keywords?)` | A user's posts (replies + starts) plus their post counts (see "Post counts" below). Optional `keywords` filters to posts containing those words. Newest-first. |
-| `profile_user(author, maxPages?)` | A public **activity profile**: total posts, topics started, interests (posts per forum), top topics, an active-hours histogram, active days, and date range. |
-| `read_topic(topicId, page?)` | One page of a topic's posts (author, date, text, permalink, and any attachment/image URLs). |
+| `topics_by_author(author, page?)` | Topics started by a username, with reply + view counts. |
+| `posts_by_author(author, page?, keywords?)` | A user's visible posts plus authoritative/visible post-count handling when available. |
+| `profile_user(author, maxPages?)` | Public activity profile: post totals, topics started, interests, top topics, active hours/days, and sample posts. |
+| `read_topic(topicId, page?)` | One page of a topic's posts, including attachments/images when available. |
 | `list_forums()` | All forum sections from the board index. |
-| `list_topics(forumId, page?, sort?)` | Topics inside a forum. `sort` = `recent` (default), `views` (most-viewed first), or `replies`. |
-| `my_notifications()` | Your notifications — **login required (see Limitations).** |
-| `my_messages()` | Your private-message inbox — **login required (see Limitations).** |
-| `health_check()` | Quick diagnostic — is the forum reachable, and is the session logged in. Run this first if a tool errors or comes back empty. |
-| `forum_guide()` | Returns the knowledge base ([`KNOWLEDGE.md`](KNOWLEDGE.md)) — Yiddish glossary, how the forum works, and which tool to use. Call it first if you're unfamiliar with the forum. |
+| `list_topics(forumId, page?, sort?)` | Topics inside a forum. |
+| `my_notifications()` | Notifications for the logged-in user, if login succeeds on the target board. |
+| `my_messages()` | Private-message inbox for the logged-in user, if login succeeds on the target board. |
+| `health_check()` | Reachability + logged-in-session diagnostic. |
+| `forum_guide()` | Contents of `KNOWLEDGE.md`, intended for site-specific notes/customizations. |
 
-Tools surface real errors (network / TLS / HTTP) instead of failing silently, and a search that finds nothing returns a `note` explaining why — e.g. the words were too short/common, search flood control, or login required.
+## Notes
 
-**Knowledge base:** [`KNOWLEDGE.md`](KNOWLEDGE.md) is a curated guide (Yiddish/Hebrew glossary, how the forum works, a tool playbook, limitations) that the `forum_guide` tool serves to the AI. It's version-controlled and grows over time as the server improves — it does **not** auto-learn from end-user sessions. Maintainers: add new terms/quirks/tips there and commit.
+- Many phpBB forums are public for read/search but block automated login with Cloudflare or other WAF layers.
+- The login-only tools are therefore **best-effort**, not guaranteed.
+- phpBB search often ignores short/common words.
+- This project parses HTML. Theme/layout changes may require selector updates.
 
-### Post counts (important)
+## Testing
 
-phpBB has **two different "total posts" numbers**, and `posts_by_author` returns both:
+This fork includes a small automated test suite:
 
-- **`totalPosts`** — the user's *authoritative* lifetime count (phpBB's `user_posts`). The member profile that shows it is login-gated, so we read the same number from the **post-profile** ("תגובות: N") of one of their posts on a topic page (public).
-- **`visiblePosts`** — the count from the search results, i.e. only what an *unauthenticated* reader can see. Posts in restricted, hidden, or trashed forums are excluded, so this can be **lower** than the real total.
-- **`hiddenFromScraper`** — `totalPosts − visiblePosts`. A non-zero value means the user posts in areas this tool can't read, so they're more active than the visible posts suggest.
+```bash
+npm run test
+```
 
-Don't conflate the two: use `totalPosts` to answer "how many posts has X written," and treat `visiblePosts` as "how many I can actually show you." (With `keywords`, the tool instead returns `matchingPosts` — the count for that filter.)
-
-### Views and likes
-
-Topics carry **view counts** (`list_topics` with `sort: "views"` for a forum's most-viewed; `topics_by_author` includes per-topic views so you can rank a user's topics). **Likes/"thanks" counts are not available** — ivelt only shows the thanks *button* to logged-in users, with no public count to read.
-
-## Optional: logged-in features
-
-`my_notifications` and `my_messages` need a logged-in session. To try them, copy `.env.example` to `.env` and add your ivelt username/password, **or** put them in the config `env` block. See **Limitations** below — these currently don't work, and the other tools need no login.
-
-## Limitations
-
-- **The login-only tools don't work.** ivelt sits behind Cloudflare, which blocks the login page for automated requests. So `my_notifications` / `my_messages` will return an error. Everything else (search, browse, read, author/profile tools) is **public** and works without any login.
-- **Keyword search ignores short/common words.** The forum's search drops words under 4 letters and very common words. For "what topics did user X start / how many posts," use `topics_by_author` / `posts_by_author` instead of keyword search.
-- **It parses HTML.** If ivelt changes its forum theme, a parser may need updating.
-- **Be polite.** The client sends a normal browser User-Agent and limits itself to about one request per second. Don't hammer the forum.
-
-## Responsible use
-
-This server reads only **public** forum content — the same pages any visitor can see. The profiling tools summarize what a user chose to post publicly (their topics, interests, and posting times). They do **not** determine anyone's real identity, address, or phone number, and you shouldn't try to use this to de-anonymize, track, or harass people. Respect the community and ivelt's terms of use.
+The tests cover:
+- generic env-var config
+- backward compatibility for ivelt env vars
+- configurable URL resolution against another board
+- English-language phpBB parsing
+- configurable MCP server identity
 
 ## License
 
-[MIT](LICENSE) — free to use, modify, and share, with attribution.
+[MIT](LICENSE)
